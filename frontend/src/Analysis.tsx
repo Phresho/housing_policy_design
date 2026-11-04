@@ -46,10 +46,10 @@ export function Plot({ traces, height = 260, xTitle, yTitle, logX = false, logY 
       const xr = range(xRange, logX);
       Plotly.react(node, traces.map(t => ({ type: 'scatter', mode: 'lines', name: t.name, x: t.x, y: t.y, opacity: t.opacity ?? 1, showlegend: t.showlegend ?? true, fill: t.fill, fillcolor: t.fillcolor,
         line: { color: t.color, dash: t.dash ?? 'solid', width: t.width ?? 2.4 }, hoverinfo: t.hover === false ? 'skip' : undefined, hovertemplate: t.hover === false ? undefined : `%{x:.2f} → %{y:.3g}<extra>${t.name}</extra>` })), {
-        height, margin: { l: 62, r: 14, t: 6, b: 44 }, paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { family: 'Inter, system-ui, sans-serif', size: 12, color: '#3c4a45' },
-        legend: { orientation: 'h', y: -0.22 }, hovermode: 'closest', shapes, annotations: notes,
+        height, margin: { l: 62, r: 14, t: 6, b: 48 }, paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { family: 'Inter, system-ui, sans-serif', size: 12, color: '#3c4a45' },
+        legend: { orientation: 'h', y: -0.3, yanchor: 'top' }, hovermode: 'closest', shapes, annotations: notes,
         xaxis: { title: { text: xTitle }, type: logX ? 'log' : 'linear', gridcolor: '#e8ece9', zeroline: false, range: xr && (reverseX ? [xr[1], xr[0]] : xr), autorange: xr ? false : reverseX ? 'reversed' : true, ...(logX ? { tickvals: [0.2, 0.5, 1, 2, 5, 10, 20, 50, 100], ticktext: ['0.2', '0.5', '1', '2', '5', '10', '20', '50', '100'] } : {}) },
-        yaxis: { title: { text: yTitle }, type: logY ? 'log' : 'linear', gridcolor: '#e8ece9', zerolinecolor: '#aab5b0', range: range(yRange, logY), exponentformat: 'power' },
+        yaxis: { title: { text: yTitle }, type: logY ? 'log' : 'linear', gridcolor: '#e8ece9', zerolinecolor: '#aab5b0', range: range(yRange, logY), exponentformat: 'power', ...(logY ? { dtick: 1 } : {}) },
       }, { displayModeBar: false, responsive: true });
     });
     return () => { live = false; };
@@ -237,8 +237,8 @@ export function Robustness({ design }: { design: Design }) {
     const cyc = ov.cycle_yr, lo = 0.2, hi = 60;
     const lim = (vals: number[]) => within(cyc, vals, lo, hi);
     const trustEnd = cyc.find((c, i) => ov.WT[i] >= 1 && (i === 0 || ov.WT[i - 1] < 1)) ?? 1.5;
-    const top = (vals: number[]) => ({ name: 'outside our limit', ...lim(vals.map(() => 1e3)), color: 'rgba(0,0,0,0)', width: 0, showlegend: false, hover: false } as Trace);
-    const shade = (limit: number[], name: string): Trace[] => [{ name, ...lim(limit), color: COLORS.spec, dash: 'dash', width: 2 }, { ...top(limit), fill: 'tonexty', fillcolor: 'rgba(232,100,43,.08)' }];
+    // Shaded area above the limit: one closed polygon (limit curve, then back along the top).
+    const shade = (limit: number[], name: string): Trace[] => { const l = lim(limit); return [{ name: 'outside our limit', x: [...l.x, ...[...l.x].reverse()], y: [...l.y, ...l.x.map(() => 1e4)], color: 'rgba(0,0,0,0)', width: 0, fill: 'toself', fillcolor: 'rgba(232,100,43,.09)', showlegend: false, hover: false }, { name, ...l, color: COLORS.spec, dash: 'dash', width: 2 }]; };
     const three = (key: 'S' | 'T' | 'KS'): Trace[] => [{ name: 'Ziegler–Nichols (thesis gains)', ...lim(curves.z[key]), color: COLORS.zn }, { name: 'H∞ PID', ...lim(curves.h[key]), color: COLORS.hinf }, { name: 'Your design', ...lim(curves.d[key]), color: COLORS.design, dash: 'dot', width: 2.6 }];
     const vline = (x: number, text: string) => ({ shape: { type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1, line: { color: '#8a9692', width: 1, dash: 'dot' } }, note: { x: Math.log10(x), xref: 'x', yref: 'paper', y: 1, text, showarrow: false, xanchor: 'left', font: { size: 11, color: '#5b6a64' } } });
     const bw = vline(2 * Math.PI / 2, 'bandwidth 3.1 yr'), trust = vline(trustEnd, `trust ends ${num(trustEnd, 1)} yr`);
@@ -254,7 +254,7 @@ export function Robustness({ design }: { design: Design }) {
   const card = (key: 'S' | 'T' | 'KS', title: string, meaning: string, yTitle: string) => {
     const v = curves.d.limits[key];
     return <section className="panel robust-card"><div className="robust-head"><div><h3 style={{ color: COLORS[key] }}>{title}</h3><p className="muted small">{meaning}</p></div><div className={'light ' + (v <= 1 ? 'ok' : 'bad')}><span aria-hidden="true"/>Your design<b>{num(v)}</b></div></div>
-      <Plot label={title} traces={panels[key].traces} shapes={panels[key].shapes} notes={panels[key].notes} height={290} xTitle="Cycle length of the shock [years]" yTitle={yTitle} logX logY reverseX xRange={[0.2, 60]} yRange={key === 'KS' ? [0.1, 300] : [0.01, 20]}/></section>;
+      <Plot label={title} traces={panels[key].traces} shapes={panels[key].shapes} notes={panels[key].notes} height={330} xTitle="Cycle length of the shock [years]" yTitle={yTitle} logX logY reverseX xRange={[0.2, 60]} yRange={key === 'KS' ? [0.1, 300] : [0.01, 20]}/></section>;
   };
   const pct = (m: MonteCarlo) => `${Math.round(m.fraction * 100)}% stable (${m.stable} of ${m.n})`;
   return <>
