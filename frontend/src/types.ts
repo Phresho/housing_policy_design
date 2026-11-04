@@ -1,0 +1,18 @@
+export type ControllerKey = 'hinf' | 'zn' | 'netlist' | 'custom';
+export interface Scenario {
+  name: string; feedback: boolean; controller: ControllerKey; kp: number; ki: number; kd: number; derivative_filter: boolean;
+  target_growth_pct: number; reference_base: number; subsidy_scale: number; interest_scale: number; income_scale: number;
+  mortgage_scale: number; crisis_scale: number; covid_scale: number;
+}
+export type Kpis = Record<'yoy_min' | 'yoy_max' | 'yoy_std' | 'yoy_mean_abs_gap' | 'price_final' | 'price_gap_final_pct' | 'subsidy_min' | 'subsidy_max' | 'subsidy_mean' | 'subsidy_total' | 'subsidy_max_change_per_year', number>;
+export interface Result { year: number[]; traces: Record<string, number[]>; series: Record<string, number[]>; kpis: Kpis; scenario: Scenario; engine: string; model_version: string; netlist_sha256: string; netlist: string }
+export interface Preset { label: string; kp: number; ki: number; kd: number; filtered: boolean }
+export interface Catalogue { defaults: Scenario; presets: Record<string, Preset>; model_version: string; time: { year_at_raw_zero: number } }
+export interface SavedRow { id: string; name: string; created_at: string; feedback: boolean; has_result: boolean }
+export interface Flow { id: string; label: string; short: string; source: string; target: string; signal: string; unit: string; kind: 'money' | 'real' | 'policy'; chain: string[]; port: { node: string; ret: string } | null; description: string }
+export interface Signal { id: string; label: string; signal: string; unit: string; element?: string; target?: string }
+export interface Element { name: string; a: string; b: string; value: string; state: string; type: string; role: string; pins: number[][]; agent: string | null; flows: string[]; trace: string; netlist: string }
+export interface Layout { size: [number, number]; wires: number[][]; return_wires: number[][]; common_returns: number[][]; dots: number[][]; grounds: number[][]; signals: { flow: string; path: number[][] }[]; ports: Record<string, number[]>; returns: Record<string, number[]>; not_drawn: string[] }
+export interface ControllerLayout { size: [number, number]; paths: number[][][]; sums: number[][]; labels: [number, number, string][]; not_drawn: string[] }
+export interface MapData { agents: Record<string, { label: string; summary: string; description: string }>; controller: { label: string; description: string }; flows: Flow[]; disturbances: Signal[]; outputs: Signal[]; elements: Element[]; layouts: Record<string, Layout>; controller_layout: ControllerLayout }
+export type Selection = { kind: 'flow' | 'signal' | 'element' | 'agent' | 'sensor' | 'shocks' | 'tf' | 'none'; id: string };

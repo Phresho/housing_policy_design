@@ -1,0 +1,8 @@
+node_modules/
+frontend/dist/
+frontend/e2e/shots/
+data/
+tools/
+__pycache__/
+.pytest_cache/
+*.tsbuildinfo
