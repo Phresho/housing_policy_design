@@ -1,0 +1,23 @@
+// Read-only check: clicking a flow opens its card on the canvas above the click, in front of headers. Usage: node e2e/pin_check.mjs [port] [outdir]
+import { chromium } from 'playwright-core';
+const port = process.argv[2] ?? '8001', out = process.argv[3] ?? 'e2e/shots';
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
+const errors = []; page.on('pageerror', e => errors.push(String(e)));
+await page.goto(`http://127.0.0.1:${port}/`); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
+await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).click(); await page.waitForSelector('.result-bar', { timeout: 120000 });
+await page.waitForTimeout(1200);
+await page.locator('.react-flow__node[data-id="system"]').click({ position: { x: 20, y: 40 } }); await page.waitForTimeout(1500);
+const rail = page.locator('.react-flow__edge[data-id="mortgages"] .rail-hit').first(); const rb = await rail.boundingBox();
+const cx = rb.x + rb.width / 2, cy = rb.y + rb.height / 2; await page.mouse.click(cx, cy); await page.waitForTimeout(600);
+const card = page.locator('.pin-card'); const b = await card.boundingBox();
+console.log('cards', await card.count(), 'card bottom above click', Math.round(cy - (b.y + b.height)), 'centred', Math.round(b.x + b.width / 2 - cx));
+const top = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('.pin-card,.sticky-head')?.className, [b.x + b.width / 2, b.y + 8]);
+console.log('on top at card head', top, 'panel', await page.locator('.inspector h3').textContent());
+await page.screenshot({ path: `${out}/c_1.png` });
+await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await page.mouse.move(b.x + b.width / 2 - 150, b.y + b.height / 2 + 120, { steps: 8 }); await page.mouse.up(); await page.waitForTimeout(300);
+const b2 = await card.boundingBox(); console.log('dragged', Math.round(b2.x - b.x), Math.round(b2.y - b.y));
+await page.getByRole('button', { name: 'Send to the dock' }).click(); await page.waitForTimeout(500);
+console.log('panel after dock', await page.locator('.inspector h3').textContent());
+await page.screenshot({ path: `${out}/c_2.png` });
+console.log('errors', errors); await browser.close();

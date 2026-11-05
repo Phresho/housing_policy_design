@@ -69,11 +69,12 @@ class Gains(BaseModel):
 class EvaluateRequest(Gains):
     settling_yr: float = Field(4.0, ge=0.5, le=30)
     overshoot_pct: float = Field(25.0, ge=1, le=90)
+    min_cycle_yr: float | None = Field(None, ge=0.2, le=30)  # shortest allowed cycle; None: no limit
 
 
 class Pick(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["flow", "signal", "element"]
+    kind: Literal["flow", "signal", "element", "effort"]
     id: str = Field(max_length=80)
 
 
@@ -81,6 +82,22 @@ class TransferRequest(Gains):
     input: Pick
     output: Pick
     feedback: bool = False
+
+
+class StepsRequest(Gains):
+    input: Pick
+    outputs: list[Pick] = Field(max_length=20)
+    feedback: bool = True
+
+
+class FitCpbRequest(BaseModel):
+    scenario: Scenario
+    cpb_scale: float = Field(1.0, gt=0, le=3)
+
+
+class FitRequest(BaseModel):
+    scenario: Scenario
+    inflation_pct: float | None = Field(None, ge=0, le=5)  # None: solved as the mean gap
 
 
 class MonteCarloRequest(Gains):
@@ -94,6 +111,7 @@ class TuneRequest(BaseModel):
     overshoot_pct: float = Field(25.0, ge=1, le=90)
     with_S: bool = False
     filtered: bool = True
+    min_cycle_yr: float | None = Field(None, ge=0.2, le=30)
 
 
 def create_app(database: Path | None = None) -> FastAPI:
@@ -105,6 +123,26 @@ def create_app(database: Path | None = None) -> FastAPI:
     def catalogue():
         return {"defaults": Scenario().model_dump(), "presets": PRESETS, "schema": Scenario.model_json_schema(),
                 "model_version": MODEL_VERSION, "time": {"seconds_per_year": SECONDS_PER_YEAR, "tran_start": TRAN_START, "year_at_raw_zero": YEAR_AT_RAW_ZERO}}
+
+    @app.post("/api/fit")
+    def fit_inputs(r: FitRequest):
+        from . import fit
+        return fit.fit(r.scenario, r.inflation_pct)
+
+    @app.get("/api/data/cpb")
+    def data_cpb():
+        from . import cbs
+        return cbs.cpb()
+
+    @app.post("/api/fit_cpb")
+    def fit_to_cpb(r: FitCpbRequest):
+        from . import fit
+        return fit.fit_cpb(r.scenario, r.cpb_scale)
+
+    @app.get("/api/data/cbs")
+    def data_cbs():
+        from . import cbs
+        return cbs.overlay()
 
     @app.get("/api/model/map")
     def map_of_model():
@@ -124,7 +162,7 @@ def create_app(database: Path | None = None) -> FastAPI:
 
     @app.post("/api/analysis/evaluate")
     def analysis_evaluate(r: EvaluateRequest):
-        return analysis.evaluate(r.gains(), r.filtered, r.settling_yr, r.overshoot_pct)
+        return analysis.evaluate(r.gains(), r.filtered, r.settling_yr, r.overshoot_pct, r.min_cycle_yr)
 
     @app.post("/api/analysis/transfer")
     def analysis_transfer(r: TransferRequest):
@@ -133,13 +171,20 @@ def create_app(database: Path | None = None) -> FastAPI:
         except (ValueError, KeyError, StopIteration) as error:
             raise HTTPException(422, str(error) or "This pair cannot be analysed.") from error
 
+    @app.post("/api/analysis/steps")
+    def analysis_steps(r: StepsRequest):
+        try:
+            return analysis.steps(r.input.model_dump(), [o.model_dump() for o in r.outputs], r.feedback, r.gains(), r.filtered)
+        except (ValueError, KeyError, StopIteration) as error:
+            raise HTTPException(422, str(error) or "This input cannot be used.") from error
+
     @app.post("/api/analysis/montecarlo")
     def analysis_montecarlo(r: MonteCarloRequest):
         return analysis.monte_carlo(r.gains(), r.filtered, r.perturb, r.n)
 
     @app.post("/api/analysis/tune")
     def analysis_tune(r: TuneRequest):
-        K, violation = analysis.tune(r.settling_yr, r.overshoot_pct, r.with_S, r.filtered)
+        K, violation = analysis.tune(r.settling_yr, r.overshoot_pct, r.with_S, r.filtered, r.min_cycle_yr)
         return {"K": K, "violation": violation, "met": violation <= 0}
 
     @app.post("/api/scenarios", status_code=201)

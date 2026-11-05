@@ -5,26 +5,28 @@ from pathlib import Path
 import numpy as np
 import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from housing import analysis as An, linear as L, ltspice, netlist as nl
+from housing import analysis as An, engine, linear as L, ltspice, netlist as nl
 from housing.scenario import Scenario, build, YEAR_AT_RAW_ZERO
 
 HINF = (1.131, 0.666, 2.839)
+
+
+STEP = 10.0  # large enough that LTspice time-step noise between two runs stays small
 
 
 def _ltspice_step(feedback: bool, year: float = 2010.0):
     """Change in price after a +1 step of the owner subsidy at N031, from two LTspice runs."""
     t0 = (year - YEAR_AT_RAW_ZERO) * 6
     out = []
-    for amp in (0, 1):
+    for amp in (0, STEP):
         lines = build(Scenario(feedback=feedback, controller="hinf"))
         lines.insert(lines.index(".backanno"), f"I§Test 0 N031 PULSE(0 {amp} {t0 + 6.01:.3f} 0.001 0.001 1000 2000)")
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "step.net"
-            nl.write_netlist(lines, path)
-            tr = ltspice.run(path)
+            tr = engine.simulate(lines)
         out.append((tr["time"], tr["I(Construction_cost)"]))
     tt = t0 + np.arange(0, 15, 0.25) * 6
-    return (tt - t0) / 6, np.interp(tt, *out[1]) - np.interp(tt, *out[0])
+    return (tt - t0) / 6, (np.interp(tt, *out[1]) - np.interp(tt, *out[0])) / STEP
 
 
 @pytest.mark.parametrize("feedback", [False, True], ids=["open", "closed"])
@@ -87,3 +89,19 @@ def test_hinf_meets_effort_and_trust_limits_zn_does_not():
     z = An.evaluate(An.PRESETS["zn"]["K"], True, 4, 25)
     assert e["stable"] and e["limits"]["T"] < 1 and e["limits"]["KS"] < 1
     assert z["limits"]["KS"] > 1 and z["limits"]["T"] > 1
+
+
+def test_slow_cycle_next_to_a_zero_is_pinned():
+    from housing import analysis as A
+    ev = A.evaluate(A.PRESETS["hinf"]["K"], True, 4.0, 25.0)
+    pinned = [p for p in ev["poles"] if p["pinned"] and p["re"] > -10]
+    assert pinned and all(p["cycle_yr"] and 1.5 < p["cycle_yr"] < 2.2 for p in pinned)  # the ~1.8-yr price cycle
+    free = [p for p in ev["poles"] if not p["pinned"] and p["shift"] > 1]
+    assert free  # other poles do move with the gains
+
+
+def test_target_step_brings_price_to_target():
+    from housing import analysis as A
+    r = A.steps({"kind": "signal", "id": "y_reference"}, [{"kind": "signal", "id": "y_price"}, {"kind": "effort", "id": "rent"}], True, [1.131, 0.666, 2.839], True)
+    assert abs(r["responses"]["signal:y_price"]["y"][-1] - 1) < 0.02  # integral action: no offset after 15 years
+    assert "y" in r["responses"]["effort:rent"]

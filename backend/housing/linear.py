@@ -86,14 +86,9 @@ def _operating_point(year: float) -> dict[str, float]:
 
 @lru_cache(maxsize=1)
 def _baseline_traces():
-    import tempfile
-    from pathlib import Path
-    from . import ltspice, netlist as nl
+    from . import engine
     from .scenario import Scenario, build
-    with tempfile.TemporaryDirectory(prefix="housing-op-") as folder:
-        path = Path(folder) / "op.net"
-        nl.write_netlist(build(Scenario(feedback=False)), path)
-        return ltspice.run(path)
+    return engine.simulate(build(Scenario(feedback=False)))
 
 
 def build_plant(op_year: float = 2015.0, scale: dict[str, float] | None = None, op: dict[str, float] | None = None) -> Plant:
@@ -180,10 +175,15 @@ def build_plant(op_year: float = 2015.0, scale: dict[str, float] | None = None, 
     row = np.zeros(n); row[cur("L§F_Consumption")] = 0.02
     kcl("0", "N043", row_vec=row); expr["B11"] = (row, np.zeros(len(inputs)))
     # B4 (voltage source N027 -> 0): V = -(R/Dr - I/Do)
-    k = branch["B4"]; R0, Dr, I0, Do = op["I(Rent)"], op["I(Demand_rent)"], op["I(Imputed_rent)"], op["I(Demand_owner_occupied)"]
+    # The run netlist uses B4 already linearised at a fixed point (scenario.b4_point), so its coefficients
+    # come from there, not from this plant's operating year.
+    from .scenario import b4_point
+    bp = b4_point()
+    k = branch["B4"]; R0, Dr, I0, Do = bp["I(Rent)"], bp["I(Demand_rent)"], bp["I(Imputed_rent)"], bp["I(Demand_owner_occupied)"]
     kcl("N027", "0", k); M0[k, node["N027"]] += 1
-    M0[k, cur("L§Rent")] += 1 / Dr; M0[k, cur("L§Demand_rent")] -= R0 / Dr ** 2
-    M0[k, cur("L§Imputed_rent")] -= 1 / Do; M0[k, cur("L§Demand_owner_occupied")] += I0 / Do ** 2
+    kb = scale.get("B4", 10.0)  # gain of B4: -10 per Jesse (the 19 Oct netlist has -1); the run netlist uses the same linear B4
+    M0[k, cur("L§Rent")] += kb / Dr; M0[k, cur("L§Demand_rent")] -= kb * R0 / Dr ** 2
+    M0[k, cur("L§Imputed_rent")] -= kb / Do; M0[k, cur("L§Demand_owner_occupied")] += kb * I0 / Do ** 2
     # Construction: kc * delay(price), Padé (1 - sT/2 + (sT)^2/12)/(1 + sT/2 + (sT)^2/12), T = 6 s
     P0, T = op["I(Construction_cost)"], 6.0
     kc = 0.002 * 0.6 * P0 ** -0.4

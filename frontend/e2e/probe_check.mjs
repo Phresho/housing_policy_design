@@ -1,0 +1,24 @@
+// Read-only check: port probes, pin on canvas, send to CBS. Usage: node e2e/probe_check.mjs [port] [outdir]
+import { chromium } from 'playwright-core';
+const port = process.argv[2] ?? '8001', out = process.argv[3] ?? 'e2e/shots';
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
+const errors = []; page.on('pageerror', e => errors.push(String(e)));
+await page.goto(`http://127.0.0.1:${port}/`); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
+await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).click(); await page.waitForSelector('.result-bar', { timeout: 120000 });
+await page.waitForTimeout(1200);
+await page.locator('.react-flow__node[data-id="system"]').click({ position: { x: 20, y: 40 } }); await page.waitForTimeout(1200);
+const hits = page.locator('.probe-hit'); console.log('probe marks', await hits.count());
+await hits.nth(0).dispatchEvent('click'); await page.waitForTimeout(600);
+console.log('panel', await page.locator('.inspector h3').textContent());
+await page.getByRole('button', { name: 'Pin on canvas' }).click(); await page.waitForTimeout(400);
+await page.getByRole('button', { name: 'Send to CBS' }).click(); await page.waitForTimeout(400);
+await hits.nth(1).dispatchEvent('click'); await page.waitForTimeout(600);
+console.log('panel', await page.locator('.inspector h3').textContent());
+await page.getByRole('button', { name: 'Pin on canvas' }).click(); await page.waitForTimeout(400);
+await page.getByRole('button', { name: /Whole model/ }).click(); await page.waitForTimeout(1000);
+console.log('pins', await page.locator('.pin-card').count());
+await page.screenshot({ path: `${out}/p_1.png` });
+await page.locator('.react-flow__node[data-id="sensor"]').click(); await page.waitForTimeout(500);
+await page.screenshot({ path: `${out}/p_2.png` });
+console.log('errors', errors); await browser.close();

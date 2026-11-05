@@ -180,23 +180,27 @@ def spec_from(settling_yr: float, overshoot_pct: float):
     return 4 / settling_yr, -lo / np.sqrt(np.pi ** 2 + lo ** 2)
 
 
-def region_violation(K, sigma_min, zeta_min, filtered=True):
+def region_violation(K, sigma_min, zeta_min, filtered=True, w_max=None):
     p = closed_loop_poles(K, filtered)
     if p.real.max() >= -1e-3:
         return 5.0 + p.real.max()
     z = -p.real / np.abs(p)
-    return max(((sigma_min + p.real) / sigma_min).max(), ((zeta_min - z) / zeta_min).max())
+    v = max(((sigma_min + p.real) / sigma_min).max(), ((zeta_min - z) / zeta_min).max())
+    if w_max:  # shortest allowed cycle: |imaginary part| <= 2 pi / cycle
+        v = max(v, ((np.abs(p.imag) - w_max) / w_max).max())
+    return v
 
 
-def tune(settling_yr: float, overshoot_pct: float, with_S: bool, filtered: bool = True):
+def tune(settling_yr: float, overshoot_pct: float, with_S: bool, filtered: bool = True, min_cycle_yr: float | None = None):
     sigma, zeta = spec_from(settling_yr, overshoot_pct)
+    w_max = 2 * np.pi / min_cycle_yr if min_cycle_yr else None
     wp = np.abs(WP(L.W))
 
     def cost(x):
         K = np.exp(x)
         if K[2] > 8 or K[0] > 30:
             return 9.0
-        v = region_violation(K, sigma, zeta, filtered)
+        v = region_violation(K, sigma, zeta, filtered, w_max)
         if with_S and v < 4:
             v = max(v, (wp * np.abs(sens(K, filtered)[0])).max() - 1)
         return v
@@ -242,7 +246,24 @@ def resolve(pick: dict, role: str, feedback: bool) -> dict:
         if element is None:
             raise ValueError(f"{f['label']} cannot be an output")
         return {"current": element, "label": f["label"]}
+    if kind == "effort":
+        f = next(x for x in FLOWS if x["id"] == id)
+        if role != "output" or not f["port"]:
+            raise ValueError("An effort can only be an output, at a port.")
+        return {"voltage": (f["port"]["node"], f["port"]["ret"]), "label": f"{f['label']} (effort)"}
     if kind == "signal":
+        if id == "u_open":  # unit step in the controller output, loop open: what the market does on its own
+            if role != "input":
+                raise ValueError("The open-loop controller step is an input.")
+            return {"source": "I§Owner_occupied_subsidies", "label": "Controller output u (owner-occupied subsidy), loop open"}
+        if id == "y_reference" and role == "input":
+            if not feedback:
+                raise ValueError("The target only acts with the loop closed.")
+            return {"reference": True, "label": "Target r"}
+        if id == "y_reference":
+            return {"reference_out": True, "label": "Target r"}
+        if id == "y_error" and role == "output":
+            return {"error": True, "label": "Gap e"}
         if id in SHOCK_SOURCES:
             if role != "input":
                 raise ValueError("A shock is set from outside; use it as the input.")
@@ -262,24 +283,59 @@ def resolve(pick: dict, role: str, feedback: bool) -> dict:
     raise ValueError("Pick a flow, a signal or a component.")
 
 
-def transfer(inp: dict, out: dict, feedback: bool, K, filtered: bool):
+def _system(i_spec: dict, o_spec: dict, feedback: bool, K, filtered: bool):
+    """(E, A, b, c, d) of one input-output pair, with the loop closed when feedback is on."""
     P = plant()
-    i_spec, o_spec = resolve(inp, "input", feedback), resolve(out, "output", feedback)
     E, A, u_idx = L.with_controller(P, tuple(K) if feedback else None, filtered)
     m, n = A.shape[0], P.A.shape[0]
-    if "source" in i_spec:
-        col, src = P.B[:, P.inputs.index(i_spec["source"])], i_spec["source"]
+    b, src = np.zeros(m), None
+    if "reference" in i_spec:
+        # e = r - y enters the controller rows (see L.with_controller)
+        kp, ki, kd = K; nf = L.WF_YR / L.YR; xi, xf, u = n, n + 1, n + 2
+        b[xi] = 1
+        if filtered:
+            b[xf] = nf; b[u] = kp + kd * nf
+        else:
+            b[xf] = 1; b[u] = kp
+    elif "source" in i_spec:
+        src = i_spec["source"]; b[:n] = P.B[:, P.inputs.index(src)]
     else:
-        col, src = L.input_column(P, {"inject": i_spec["inject"]})
-    b = np.zeros(m); b[:n] = col
+        col, src = L.input_column(P, {"inject": i_spec["inject"]}); b[:n] = col
     c, d = np.zeros(m), 0.0
     if "control" in o_spec:
         c[u_idx] = 1
     elif "source_out" in o_spec:
         d = 1.0 if o_spec["source_out"] == src else 0.0
+    elif "reference_out" in o_spec:
+        d = 1.0 if "reference" in i_spec else 0.0
+    elif "error" in o_spec:  # e = r - y
+        row, dval = L.output_row(P, {"current": L.PRICE}, src)
+        c[:n] = -row; d = (1.0 if "reference" in i_spec else 0.0) - dval
+    elif "voltage" in o_spec:
+        c[:n] = P.voltage(*o_spec["voltage"])
     else:
         row, dval = L.output_row(P, {"current": o_spec["current"]}, src)
         c[:n] = row; d = dval
+    return E, A, b, c, d
+
+
+def steps(inp: dict, outs: list[dict], feedback: bool, K, filtered: bool, years: float = 15) -> dict:
+    """Step responses of several outputs to one input, for the plot cards while tuning."""
+    i_spec = resolve(inp, "input", feedback)
+    res = {}
+    for o in outs:
+        key = f"{o['kind']}:{o['id']}"
+        try:
+            t, y = L.step(*_system(i_spec, resolve(o, "output", feedback), feedback, K, filtered), years=years)
+            res[key] = {"t": np.round(t[::4], 3).tolist(), "y": np.round(y[::4], 6).tolist()}
+        except (ValueError, KeyError, StopIteration) as error:
+            res[key] = {"error": str(error) or "Not available"}
+    return {"input": i_spec["label"], "responses": res}
+
+
+def transfer(inp: dict, out: dict, feedback: bool, K, filtered: bool):
+    i_spec, o_spec = resolve(inp, "input", feedback), resolve(out, "output", feedback)
+    E, A, b, c, d = _system(i_spec, o_spec, feedback, K, filtered)
     H = L.freq(E, A, b, c, d, L.W)
     poles, zeros = L.tf_poles_zeros(E, A, b, c, d)
     t, y = L.step(E, A, b, c, d, years=25)
@@ -314,15 +370,32 @@ def overview():
     }
 
 
-def evaluate(K, filtered: bool, settling_yr: float, overshoot_pct: float):
-    p = closed_loop_poles(K, filtered)
+PIN_SHIFT, PIN_ZERO = 0.15, 0.5  # Claude's thresholds: moves < 0.15/yr when all gains double, and a plant zero within 0.5
+
+
+def mobility(K, filtered: bool = True, g: dict | None = None):
+    """For each closed-loop pole: how far it moves if all three gains double (first order), and the nearest plant zero."""
+    g = g or loop()
+    c = char_poly(g, K, filtered)
+    nk = np.polysub(c, char_poly(g, [0.0, 0.0, 0.0], filtered))  # the part proportional to the gains
+    p = np.roots(c)
+    shift = np.abs(np.polyval(nk, p) / np.polyval(np.polyder(c), p)) * np.log(2)
+    zd = np.array([np.min(np.abs(g["zeros"] - q)) if len(g["zeros"]) else np.inf for q in p])
+    return p, shift, zd
+
+
+def evaluate(K, filtered: bool, settling_yr: float, overshoot_pct: float, min_cycle_yr: float | None = None):
+    p, shift, zd = mobility(K, filtered)
     sigma, zeta = spec_from(settling_yr, overshoot_pct)
     damping = -p.real / np.abs(p)
     inside = (p.real <= -sigma + 1e-9) & (damping >= zeta - 1e-9)
+    if min_cycle_yr:  # poles that cycle faster than the shortest allowed cycle are not admissible
+        inside &= np.abs(p.imag) <= 2 * np.pi / min_cycle_yr + 1e-9
     S, T, KS = sens(K, filtered)
     wt, wp = wt_envelope(), np.abs(WP(L.W))
     return {
-        "poles": [{**L.pole_info(v), "inside": bool(ok)} for v, ok in zip(p, inside)],
+        "poles": [{**L.pole_info(v), "inside": bool(ok), "shift": round(float(s), 4), "zero_dist": round(float(d), 4), "pinned": bool(s < PIN_SHIFT and d < PIN_ZERO)}
+                  for v, ok, s, d in zip(p, inside, shift, zd)],
         "stable": bool(p.real.max() < 0), "outside": int((~inside).sum()), "sigma_min": sigma, "zeta_min": zeta,
         "S": np.round(np.abs(S), 5).tolist(), "T": np.round(np.abs(T), 5).tolist(), "KS": np.round(np.abs(KS), 5).tolist(),
         "peaks": {"S": float(np.abs(S).max()), "T": float(np.abs(T).max()), "KS": float(np.abs(KS).max())},

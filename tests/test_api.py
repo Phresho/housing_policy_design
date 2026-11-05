@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from fastapi.testclient import TestClient
+from housing import engine
 from housing.server import create_app
 
 
@@ -16,7 +17,7 @@ def test_run_save_and_load(tmp_path):
     assert r.status_code == 200 and r.json()["scenario"]["feedback"] is True
     saved = c.post("/api/scenarios", json={"scenario": defaults, "result": r.json()}).json()
     assert c.get("/api/scenarios").json()[0]["has_result"] is True
-    assert c.get(f"/api/scenarios/{saved['id']}").json()["result"]["engine"] == "LTspice batch"
+    assert c.get(f"/api/scenarios/{saved['id']}").json()["result"]["engine"] == engine.label()
 
 
 def test_rejects_bad_input_and_unknown_id(tmp_path):

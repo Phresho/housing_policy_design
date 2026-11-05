@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from housing import ltspice, netlist as nl
+from housing import engine, ltspice, netlist as nl
 from housing.scenario import Scenario, build, run
 from housing.topology import AGENTS, CONTROLLER_LAYOUT, DISTURBANCES, FLOWS, LAYOUTS, NOT_IN_CIRCUIT, OUTPUTS, model_map
 
@@ -12,8 +12,7 @@ from housing.topology import AGENTS, CONTROLLER_LAYOUT, DISTURBANCES, FLOWS, LAY
 @pytest.fixture(scope="module", params=[False, True], ids=["open", "closed"])
 def traces(request, tmp_path_factory):
     path = tmp_path_factory.mktemp("t") / "m.net"
-    nl.write_netlist(build(Scenario(feedback=request.param)), path)
-    return ltspice.run(path)
+    return engine.simulate(build(Scenario(feedback=request.param)))
 
 
 def _drawn_nets(agent):
@@ -169,13 +168,13 @@ def test_flows_reference_real_elements_agents_and_traces(traces):
         assert flow["source"] in AGENTS or flow["source"] == "controller"
         assert flow["target"] in AGENTS
         assert set(flow["chain"]) <= names, flow["id"]
-        assert flow["signal"] == "owner_subsidy" or flow["signal"] in traces, flow["id"]
+        assert flow["signal"] in ("owner_subsidy", "rental_subsidy") or flow["signal"] in traces, flow["id"]
     assert Counter(f["id"] for f in FLOWS).most_common(1)[0][1] == 1
 
 
 def test_flows_run_in_the_drawn_direction(traces):
     for flow in FLOWS:
-        if flow["signal"] != "owner_subsidy" and flow["id"] != "mortgages":
+        if flow["signal"] not in ("owner_subsidy", "rental_subsidy") and flow["id"] != "mortgages":
             assert traces[flow["signal"]].mean() > 0, flow["id"]
 
 

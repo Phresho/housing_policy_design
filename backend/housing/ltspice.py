@@ -6,9 +6,11 @@ import numpy as np
 from .raw import read_raw
 
 BINARY = "/Applications/LTspice.app/Contents/MacOS/LTspice"
+TIMEOUT = 120.0  # seconds; the fits lower it so a stuck run is dropped quickly
 
 
-def run(netlist: Path, timeout: float = 120.0) -> dict[str, np.ndarray]:
+def run(netlist: Path, timeout: float | None = None) -> dict[str, np.ndarray]:
+    timeout = TIMEOUT if timeout is None else timeout
     netlist = Path(netlist).resolve()
     done = subprocess.run([BINARY, "-b", netlist.name], cwd=netlist.parent, timeout=timeout,
                           capture_output=True)

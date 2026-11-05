@@ -1,0 +1,26 @@
+// Read-only check of the supervisor-feedback changes (no saves). Usage: node e2e/feedback_check.mjs [port] [outdir]
+import { chromium } from 'playwright-core';
+const port = process.argv[2] ?? '8001', out = process.argv[3] ?? 'e2e/shots';
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
+const errors = []; page.on('pageerror', e => errors.push(String(e)));
+await page.goto(`http://127.0.0.1:${port}/`); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
+await page.waitForTimeout(1500);
+await page.screenshot({ path: `${out}/fb_1_open.png` });
+const sw = page.getByRole('switch', { name: 'Feedback loop switch' });
+console.log('switch present', await sw.count(), 'checked', await sw.getAttribute('aria-checked'));
+await sw.dispatchEvent('click'); await page.waitForTimeout(500);
+console.log('after click checked', await sw.getAttribute('aria-checked'), 'mode', await page.locator('.mode').textContent());
+await page.locator('.react-flow__node[data-id="controller"]').click(); await page.waitForTimeout(800);
+const before = await page.locator('.gain-step output').first().textContent();
+await page.getByRole('button', { name: 'Kp up 10%' }).click(); await page.waitForTimeout(300);
+console.log('Kp', before, '->', await page.locator('.gain-step output').first().textContent());
+await page.screenshot({ path: `${out}/fb_2_closed_steps.png` });
+await page.getByRole('button', { name: 'Collapse panel' }).click(); await page.waitForTimeout(400);
+console.log('dock handle', await page.getByRole('button', { name: 'Open panel' }).count());
+await page.getByRole('button', { name: /Root locus/ }).first().click(); await page.waitForTimeout(1500);
+await page.screenshot({ path: `${out}/fb_3_rootlocus.png` });
+await page.waitForTimeout(500);
+console.log('dock still collapsed after tab switch', await page.getByRole('button', { name: 'Open panel' }).count());
+console.log('errors', errors);
+await browser.close();

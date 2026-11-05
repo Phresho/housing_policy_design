@@ -40,7 +40,7 @@ FLOWS = [
     {"id": "savings_interest", "label": "Savings interest", "short": "Savings interest", "source": "bank", "target": "households", "signal": "I(L15)", "unit": "€/year", "kind": MONEY, "chain": ["B2", "L15", "R2"], "port": {"node": "N012", "ret": "0"}, "description": "Interest on savings."},
     {"id": "loans", "label": "Loans", "short": "Loans", "source": "bank", "target": "firms", "signal": "I(L7)", "unit": "€/year", "kind": MONEY, "chain": ["I8", "L7", "R17", "L§F_loans"], "port": {"node": "N009", "ret": "0"}, "description": "Lending to firms."},
     {"id": "loan_interest", "label": "Loan interest", "short": "Loan interest", "source": "firms", "target": "bank", "signal": "I(L5)", "unit": "€/year", "kind": MONEY, "chain": ["L12", "B5", "L5", "R16"], "port": {"node": "N001", "ret": "0"}, "description": "Interest paid by firms."},
-    {"id": "rental_subsidy", "label": "Rental subsidies", "short": "u1 Rental", "source": "controller", "target": "households", "signal": "I(Rental_subsidies1)", "unit": "€/year", "kind": POLICY, "chain": ["I§Rental_subsidies1"], "port": None, "description": "Controller signal u1. It sets the source inside Households that adds to rent at N029. A historical path in both modes."},
+    {"id": "rental_subsidy", "label": "Rental subsidies", "short": "u1 Rental", "source": "controller", "target": "households", "signal": "rental_subsidy", "unit": "€/year", "kind": POLICY, "chain": ["I§Rental_subsidies1"], "port": None, "description": "Controller signal u1. It sets the source inside Households that adds to rent at N029. A historical path; with the rental share loop on, the money that loop moves is added."},
     {"id": "owner_subsidy", "label": "Owner-occupied subsidies", "short": "u2 Owner", "source": "controller", "target": "households", "signal": "owner_subsidy", "unit": "€/year", "kind": POLICY, "chain": ["I§Owner_occupied_subsidies", "B§PID"], "port": None, "description": "Controller signal u2. It sets the source inside Households that adds to imputed rent at N031. Historical path in open loop, PID output in closed loop."},
 ]
 DISTURBANCES = [
@@ -52,7 +52,7 @@ DISTURBANCES = [
     {"id": "d_loans", "label": "Lending to firms", "signal": "I(I8)", "unit": "€/year", "target": "bank", "element": "I8"},
 ]
 OUTPUTS = [
-    {"id": "y_price", "label": "Measured price", "signal": "I(Construction_cost)", "unit": "Model units", "element": "V§Construction_cost"},
+    {"id": "y_price", "label": "House price", "signal": "I(Construction_cost)", "unit": "Model units", "element": "V§Construction_cost"},
     {"id": "y_yoy", "label": "Yearly price change", "signal": "yoy", "unit": "% a year", "element": "B§Year_on_year_change1"},
     {"id": "y_house", "label": "Price of a house", "signal": "I(B3)", "unit": "€/m²", "element": "B3"},
     {"id": "y_net_rent", "label": "Net housing cost, rent", "signal": "I(Net_housing_rent1)", "unit": "€/m²year", "element": "B§Net_housing_Rent1"},
@@ -167,7 +167,7 @@ CONTROLLER_LAYOUT = {"size": [1100, 480], "elements": {
 }, "paths": [
     [[160, 120], [350, 120], [350, 196]], [[350, 480], [350, 244]], [[400, 220], [480, 220], [480, 100], [560, 100]], [[480, 220], [560, 220]], [[480, 220], [480, 340], [560, 340]],
     [[660, 100], [800, 100], [800, 196]], [[660, 220], [776, 220]], [[660, 340], [800, 340], [800, 244]], [[824, 220], [1100, 220]],
-], "sums": [[800, 220]], "labels": [[360, 470, "Measured price y"], [850, 205, "u2 to Households"]], "not_drawn": ["B§PID_I", "B§PID_dist", "I3"]}
+], "sums": [[800, 220]], "labels": [[360, 470, "House price y"], [850, 205, "u2 to Households"]], "not_drawn": ["B§PID_I", "B§PID_dist", "I3"]}
 NOT_IN_CIRCUIT = ["I6", "I7"]
 
 

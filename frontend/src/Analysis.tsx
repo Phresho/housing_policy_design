@@ -4,8 +4,8 @@ import { api } from './api';
 
 // ---------- types
 export type K3 = [number, number, number];
-export interface Design { K: K3; filtered: boolean; settling: number; overshoot: number }
-export interface PoleRow { re: number; im: number; decay_rate: number; settling_yr: number | null; cycle_yr: number | null; damping: number; inside?: boolean }
+export interface Design { K: K3; filtered: boolean; settling: number; overshoot: number; minCycle?: number | null }  // minCycle: shortest allowed cycle in years, null = no limit
+export interface PoleRow { re: number; im: number; decay_rate: number; settling_yr: number | null; cycle_yr: number | null; damping: number; inside?: boolean; shift?: number; zero_dist?: number; pinned?: boolean }
 interface Overview {
   op_year: number; presets: Record<string, { label: string; K: K3 }>; ultimate: { Ku: number; Pu_yr: number; zn: K3 } | null; wf: number;
   open_loop: { re: number; im: number }[]; fixed: { re: number; im: number }[]; plant_zeros: { re: number; im: number }[];
@@ -90,22 +90,23 @@ export function TransferView({ tf }: { tf: Transfer }) {
 }
 
 // ---------- pole plot with lines you can drag
-const X0 = -11, X1 = 1, Y1 = 13, PW = 640, PH = 500, M = { l: 54, r: 14, t: 12, b: 42 };
+const X0 = -6, X1 = 0.6, Y1 = 13, PW = 640, PH = 500, M = { l: 54, r: 14, t: 12, b: 42 };
 const sx = (re: number) => M.l + (re - X0) / (X1 - X0) * (PW - M.l - M.r);
 const sy = (im: number) => M.t + (Y1 - im) / (2 * Y1) * (PH - M.t - M.b);
-function PolePlot({ ev, ov, spec, setSpec, showLocus, showOpen }: { ev?: Evaluation; ov: Overview; spec: { settling: number; overshoot: number }; setSpec: (s: { settling: number; overshoot: number }) => void; showLocus: boolean; showOpen: boolean }) {
+function PolePlot({ ev, ov, spec, setSpec, showLocus, showOpen, showZeros }: { ev?: Evaluation; ov: Overview; spec: { settling: number; overshoot: number; minCycle?: number | null }; setSpec: (s: { settling: number; overshoot: number; minCycle?: number | null }) => void; showLocus: boolean; showOpen: boolean; showZeros: boolean }) {
   const svg = useRef<SVGSVGElement>(null);
-  const [drag, setDrag] = useState<'line' | 'wedge' | null>(null);
+  const [drag, setDrag] = useState<'line' | 'wedge' | 'cycle' | null>(null);
   const [hover, setHover] = useState<PoleRow | null>(null);
   const { sigma, zeta } = specFrom(spec.settling, spec.overshoot), t = Math.tan(Math.acos(zeta));
   const toData = (e: React.PointerEvent) => { const m = svg.current!.getScreenCTM()!.inverse(), p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m); return { re: X0 + (p.x - M.l) / (PW - M.l - M.r) * (X1 - X0), im: Y1 - (p.y - M.t) / (PH - M.t - M.b) * 2 * Y1 }; };
   const move = (e: React.PointerEvent) => {
     if (!drag) return; const { re, im } = toData(e);
+    if (drag === 'cycle') { setSpec({ ...spec, minCycle: Math.min(30, Math.max(0.5, Math.round(2 * Math.PI / Math.max(0.21, Math.abs(im)) * 10) / 10)) }); return; }
     if (drag === 'line') setSpec({ ...spec, settling: Math.min(30, Math.max(0.5, Math.round(4 / Math.max(0.134, -re) * 10) / 10)) });
     else { const angle = Math.atan2(Math.abs(im), Math.max(1e-3, -re)), z = Math.cos(Math.min(1.5, Math.max(0.05, angle))); setSpec({ ...spec, overshoot: Math.min(90, Math.max(1, Math.round(overshootOf(z)))) }); }
   };
   const far = 60, region = `M${sx(-sigma)} ${sy(sigma * t)}L${sx(-far)} ${sy(far * t)}L${sx(-far)} ${sy(-far * t)}L${sx(-sigma)} ${sy(-sigma * t)}Z`;
-  const handleR = 7.5, hx = -handleR * Math.cos(Math.acos(zeta)), hy = handleR * Math.sin(Math.acos(zeta));
+  const handleR = 4.5, hx = -handleR * Math.cos(Math.acos(zeta)), hy = handleR * Math.sin(Math.acos(zeta));
   const ticks = [0.5, 1, 2, 5].map(c => 2 * Math.PI / c);
   const cross = (re: number, im: number, cls: string, key: string, r = 7) => <path key={key} className={cls} d={`M${sx(re) - r} ${sy(im) - r}L${sx(re) + r} ${sy(im) + r}M${sx(re) - r} ${sy(im) + r}L${sx(re) + r} ${sy(im) - r}`}/>;
   const visible = (p: { re: number; im: number }) => p.re >= X0 && p.re <= X1 && Math.abs(p.im) <= Y1;
@@ -116,19 +117,21 @@ function PolePlot({ ev, ov, spec, setSpec, showLocus, showOpen }: { ev?: Evaluat
       <rect x={M.l} y={M.t} width={PW - M.l - M.r} height={PH - M.t - M.b} className="pp-bg"/>
       <g clipPath="url(#plot-area)">
         <rect x={sx(0)} y={M.t} width={sx(X1) - sx(0)} height={PH - M.t - M.b} className="pp-unstable"/>
-        <path d={region} className="pp-allowed"/>
+        {spec.minCycle ? <><clipPath id="cycle-band"><rect x={M.l} width={PW - M.l - M.r} y={sy(2 * Math.PI / spec.minCycle)} height={Math.max(0, sy(-2 * Math.PI / spec.minCycle) - sy(2 * Math.PI / spec.minCycle))}/></clipPath>
+          <path d={region} className="pp-allowed" clipPath="url(#cycle-band)"/></> : <path d={region} className="pp-allowed"/>}
         {ticks.map(w => [w, -w].map(y => <line key={y} x1={M.l} x2={PW - M.r} y1={sy(y)} y2={sy(y)} className="pp-grid"/>))}
-        {[-10, -8, -6, -4, -2].map(x => <line key={x} x1={sx(x)} x2={sx(x)} y1={M.t} y2={PH - M.b} className="pp-grid"/>)}
+        {[-5, -4, -3, -2, -1].map(x => <line key={x} x1={sx(x)} x2={sx(x)} y1={M.t} y2={PH - M.b} className="pp-grid"/>)}
         <line x1={M.l} x2={PW - M.r} y1={sy(0)} y2={sy(0)} className="pp-axis"/><line x1={sx(0)} x2={sx(0)} y1={M.t} y2={PH - M.b} className="pp-axis strong"/>
         {showLocus && ov.locus.poles.map((ps, i) => ps.filter(visible).map((p, j) => <circle key={`${i}-${j}`} cx={sx(p.re)} cy={sy(p.im)} r={1.3} className="pp-locus"/>))}
         {showOpen && ov.open_loop.filter(visible).map((p, i) => cross(p.re, p.im, 'pp-open', `o${i}`, 5))}
+        {showZeros && ov.plant_zeros.filter(visible).map((z, i) => <circle key={`z${i}`} cx={sx(z.re)} cy={sy(z.im)} r={6} className="pp-zero"/>)}
         {ov.fixed.filter(visible).map((p, i) => <circle key={`f${i}`} cx={sx(p.re)} cy={sy(p.im)} r={10} className="pp-fixed"/>)}
         {/* spec lines */}
         <path d={`M${sx(0)} ${sy(0)}L${sx(-far)} ${sy(far * t)}M${sx(0)} ${sy(0)}L${sx(-far)} ${sy(-far * t)}`} className="pp-spec"/>
         <line x1={sx(-sigma)} x2={sx(-sigma)} y1={M.t} y2={PH - M.b} className="pp-spec"/>
         <line x1={sx(-sigma)} x2={sx(-sigma)} y1={M.t} y2={PH - M.b} className="pp-grab" onPointerDown={e => { (e.target as Element).setPointerCapture?.(e.pointerId); setDrag('line'); }}/>
         <path d={`M${sx(0)} ${sy(0)}L${sx(-far)} ${sy(far * t)}`} className="pp-grab" onPointerDown={() => setDrag('wedge')}/>
-        {ev?.poles.filter(visible).map((p, i) => <g key={`p${i}`} onPointerEnter={() => setHover(p)} onPointerLeave={() => setHover(null)}>{cross(p.re, p.im, p.inside ? 'pp-pole in' : 'pp-pole out', `x${i}`)}<circle cx={sx(p.re)} cy={sy(p.im)} r={12} className="pp-hit"/></g>)}
+        {ev?.poles.filter(visible).map((p, i) => <g key={`p${i}`} onPointerEnter={() => setHover(p)} onPointerLeave={() => setHover(null)}>{p.pinned && <circle cx={sx(p.re)} cy={sy(p.im)} r={13} className="pp-pin"/>}{cross(p.re, p.im, p.inside ? 'pp-pole in' : 'pp-pole out', `x${i}`)}{p.pinned && p.im > 0 && <text x={sx(p.re) + 16} y={sy(p.im) - 10} className="pp-pin-label">pinned</text>}<circle cx={sx(p.re)} cy={sy(p.im)} r={12} className="pp-hit"/></g>)}
       </g>
       <circle cx={sx(-sigma)} cy={M.t + 16} r={9} className="pp-handle" role="slider" aria-label="Settling-time line" aria-valuenow={spec.settling} tabIndex={0}
         onKeyDown={e => { if (e.key === 'ArrowLeft') setSpec({ ...spec, settling: Math.max(0.5, +(spec.settling - 0.1).toFixed(1)) }); if (e.key === 'ArrowRight') setSpec({ ...spec, settling: Math.min(30, +(spec.settling + 0.1).toFixed(1)) }); }}
@@ -136,16 +139,21 @@ function PolePlot({ ev, ov, spec, setSpec, showLocus, showOpen }: { ev?: Evaluat
       <circle cx={sx(hx)} cy={sy(hy)} r={9} className="pp-handle" role="slider" aria-label="Overshoot wedge" aria-valuenow={spec.overshoot} tabIndex={0}
         onKeyDown={e => { if (e.key === 'ArrowUp') setSpec({ ...spec, overshoot: Math.min(90, spec.overshoot + 1) }); if (e.key === 'ArrowDown') setSpec({ ...spec, overshoot: Math.max(1, spec.overshoot - 1) }); }}
         onPointerDown={() => setDrag('wedge')}/>
-      <text x={sx(-sigma) - 6} y={PH - M.b - 8} className="pp-spec-label" textAnchor="end">shocks gone in {num(spec.settling, 1)} yr</text>
+      <text x={sx(-sigma) - 6} y={PH - M.b - 8} className="pp-spec-label" textAnchor="end">adjustment rate: shocks gone in {num(spec.settling, 1)} yr</text>
       <text x={sx(hx) - 14} y={sy(hy) - 12} className="pp-spec-label" textAnchor="end">overshoot ≤ {num(spec.overshoot, 0)}%</text>
+      {spec.minCycle && 2 * Math.PI / spec.minCycle < Y1 && <g>{[1, -1].map(s => <line key={s} x1={M.l} x2={sx(0)} y1={sy(s * 2 * Math.PI / spec.minCycle!)} y2={sy(s * 2 * Math.PI / spec.minCycle!)} className="pp-spec"/>)}
+        {[1, -1].map(s => <line key={'g' + s} x1={M.l} x2={sx(0)} y1={sy(s * 2 * Math.PI / spec.minCycle!)} y2={sy(s * 2 * Math.PI / spec.minCycle!)} className="pp-grab" onPointerDown={e => { (e.target as Element).setPointerCapture?.(e.pointerId); setDrag('cycle'); }}/>)}
+        <circle cx={M.l + 22} cy={sy(2 * Math.PI / spec.minCycle)} r={9} className="pp-handle" role="slider" aria-label="Shortest cycle line" aria-valuenow={spec.minCycle} tabIndex={0} onPointerDown={() => setDrag('cycle')}
+          onKeyDown={e => { if (e.key === 'ArrowUp') setSpec({ ...spec, minCycle: Math.max(0.5, +(spec.minCycle! - 0.1).toFixed(1)) }); if (e.key === 'ArrowDown') setSpec({ ...spec, minCycle: Math.min(30, +(spec.minCycle! + 0.1).toFixed(1)) }); }}/>
+        <text x={M.l + 36} y={sy(2 * Math.PI / spec.minCycle) - 6} className="pp-spec-label">shortest cycle {num(spec.minCycle, 1)} yr</text></g>}
       <text x={sx(0.5)} y={M.t + 40} className="pp-unstable-label" transform={`rotate(-90 ${sx(0.5)} ${M.t + 40})`} textAnchor="end">unstable</text>
-      <text x={M.l + 10} y={PH - M.b - 10} className="pp-allowed-label">allowed</text>
-      {[-10, -8, -6, -4, -2, 0].map(x => <text key={x} x={sx(x)} y={PH - M.b + 16} textAnchor="middle" className="pp-tick">{x}</text>)}
+      <text x={M.l + 10} y={PH - M.b - 10} className="pp-allowed-label">admissible</text>
+      {[-6, -5, -4, -3, -2, -1, 0].map(x => <text key={x} x={sx(x)} y={PH - M.b + 16} textAnchor="middle" className="pp-tick">{x}</text>)}
       {[0.5, 1, 2, 5].flatMap(c => [1, -1].map(s => <text key={c * s} x={M.l - 6} y={sy(s * 2 * Math.PI / c) + 4} textAnchor="end" className="pp-tick">{c}</text>))}
       <text x={(PW + M.l) / 2} y={PH - 6} textAnchor="middle" className="pp-axis-title">Decay rate [1/year] (left = faster)</text>
       <text x={14} y={PH / 2} textAnchor="middle" className="pp-axis-title" transform={`rotate(-90 14 ${PH / 2})`}>Cycle length [years]</text>
     </svg>
-    <div className="pp-tip" aria-live="polite">{hover ? <>Cycle {hover.cycle_yr ? `${num(hover.cycle_yr, 2)} yr` : 'none'} · settles in {hover.settling_yr ? `${num(hover.settling_yr, 1)} yr` : '—'} · damping {num(hover.damping, 2)}{hover.damping < 1 && hover.damping > 0 ? ` · overshoot ${num(overshootOf(hover.damping), 0)}%` : ''} · {hover.inside ? 'inside the lines' : 'outside the lines'}</> : <>Drag the vertical line or the upper ray. Hover a pole to read it. {offscreen > 0 && `${offscreen} fast pole${offscreen > 1 ? 's' : ''} lie left of the plot.`}</>}</div>
+    <div className="pp-tip" aria-live="polite">{hover ? <>Cycle {hover.cycle_yr ? `${num(hover.cycle_yr, 2)} yr` : 'none'} · settles in {hover.settling_yr ? `${num(hover.settling_yr, 1)} yr` : '—'} · damping {num(hover.damping, 2)}{hover.damping < 1 && hover.damping > 0 ? ` · overshoot ${num(overshootOf(hover.damping), 0)}%` : ''} · {hover.inside ? 'inside the lines' : 'outside the lines'}{hover.shift !== undefined && <> · moves {num(hover.shift, 2)}/yr if all gains double</>}{hover.pinned && <> · <b>pinned</b>: a zero sits {num(hover.zero_dist ?? 0, 2)} away, so the subsidy hardly reaches this cycle</>}</> : <>Drag the vertical line or the upper ray. Hover a pole to read it. {offscreen > 0 && `${offscreen} fast pole${offscreen > 1 ? 's' : ''} lie left of the plot.`}</>}</div>
   </div>;
 }
 
@@ -160,10 +168,10 @@ const SHOCK_CHOICES = [['d_crisis', 'Financial crisis shock'], ['d_covid', 'Covi
 
 export function PoleDesign({ design, setDesign, useInSimulation }: { design: Design; setDesign: (d: Design) => void; useInSimulation: () => void }) {
   const [ov, setOv] = useState<Overview>(); const [err, setErr] = useState('');
-  const [showLocus, setShowLocus] = useState(false), [showOpen, setShowOpen] = useState(true);
+  const [showLocus, setShowLocus] = useState(false), [showOpen, setShowOpen] = useState(true), [showZeros, setShowZeros] = useState(true);
   const [withS, setWithS] = useState(false), [tuning, setTuning] = useState(''), [shock, setShock] = useState<string>('d_crisis');
   useEffect(() => { getOverview().then(setOv).catch(e => setErr(e.message)); }, []);
-  const { value: ev, error } = useDebounced(() => api<Evaluation>('/analysis/evaluate', { K: design.K, filtered: design.filtered, settling_yr: design.settling, overshoot_pct: design.overshoot }), [design.K.join(), design.filtered, design.settling, design.overshoot], 80);
+  const { value: ev, error } = useDebounced(() => api<Evaluation>('/analysis/evaluate', { K: design.K, filtered: design.filtered, settling_yr: design.settling, overshoot_pct: design.overshoot, min_cycle_yr: design.minCycle ?? null }), [design.K.join(), design.filtered, design.settling, design.overshoot, design.minCycle], 80);
   const resp = useDebounced(async () => {
     const q = (feedback: boolean, output: object) => api<Transfer>('/analysis/transfer', { input: { kind: 'signal', id: shock }, output, feedback, K: design.K, filtered: design.filtered });
     const [price, subsidy, none] = await Promise.all([q(true, { kind: 'signal', id: 'y_price' }), q(true, { kind: 'flow', id: 'owner_subsidy' }), q(false, { kind: 'signal', id: 'y_price' })]);
@@ -172,7 +180,7 @@ export function PoleDesign({ design, setDesign, useInSimulation }: { design: Des
   const setK = (i: number, v: number) => { const K = [...design.K] as K3; K[i] = v; setDesign({ ...design, K }); };
   const tune = async () => {
     setTuning('Searching…');
-    try { const r = await api<{ K: K3; met: boolean; violation: number }>('/analysis/tune', { settling_yr: design.settling, overshoot_pct: design.overshoot, with_S: withS, filtered: design.filtered }); setDesign({ ...design, K: r.K.map(v => +v.toPrecision(4)) as K3 }); setTuning(r.met ? 'Found gains that put every pole inside your lines.' : 'No gains meet these lines. Shown: the closest found.'); }
+    try { const r = await api<{ K: K3; met: boolean; violation: number }>('/analysis/tune', { settling_yr: design.settling, overshoot_pct: design.overshoot, min_cycle_yr: design.minCycle ?? null, with_S: withS, filtered: design.filtered }); setDesign({ ...design, K: r.K.map(v => +v.toPrecision(4)) as K3 }); setTuning(r.met ? 'Found gains that put every pole inside your lines.' : 'No gains meet these lines. Shown: the closest found.'); }
     catch (e) { setTuning((e as Error).message); }
   };
   if (err) return <div role="alert" className="notice bad">{err}</div>;
@@ -182,13 +190,15 @@ export function PoleDesign({ design, setDesign, useInSimulation }: { design: Des
   return <>
     <section className="panel"><div className="policy-head"><div><h2>Draw the adjustment you want</h2><p className="muted">Each cross is a closed-loop pole of the price loop. The vertical line sets how fast a shock must be gone; the two rays set how far the price may swing past its new level. Drag them. Every pole should end up in the green area.</p></div></div>
       <div className="pole-layout">
-        <PolePlot ev={ev} ov={ov} spec={{ settling: design.settling, overshoot: design.overshoot }} setSpec={s => setDesign({ ...design, settling: s.settling, overshoot: s.overshoot })} showLocus={showLocus} showOpen={showOpen}/>
+        <PolePlot ev={ev} ov={ov} spec={{ settling: design.settling, overshoot: design.overshoot, minCycle: design.minCycle }} setSpec={s => setDesign({ ...design, settling: s.settling, overshoot: s.overshoot, minCycle: s.minCycle })} showLocus={showLocus} showOpen={showOpen} showZeros={showZeros}/>
         <div className="pole-side">
           {error && <p className="state-note">{error}</p>}
           {ev && <div className={'verdict ' + (!ev.stable ? 'bad' : ev.outside ? 'warn' : 'good')}>{!ev.stable ? 'Unstable: a pole lies right of the axis.' : ev.outside ? `Stable. ${ev.outside} pole${ev.outside > 1 ? 's lie' : ' lies'} outside your lines.` : 'Stable. Every pole lies inside your lines.'}</div>}
+          {ev && ev.poles.some(p => p.pinned) && <p className="muted small"><b>Pinned</b> (ringed): {ev.poles.filter(p => p.pinned && p.im >= 0).length === 1 ? 'this pole has' : 'these poles have'} a zero (○) right next to {ev.poles.filter(p => p.pinned && p.im >= 0).length === 1 ? 'it' : 'them'}. The subsidy hardly reaches that cycle in the price, so no choice of the three gains moves it much: it can only slide towards the zero. Moving it needs a second policy instrument or more measurements than the price.</p>}
           <div className="spec-inputs">
-            <label>Shocks gone within<span><input type="number" min={0.5} max={30} step={0.5} value={design.settling} onChange={e => setDesign({ ...design, settling: Math.min(30, Math.max(0.5, Number(e.target.value) || 4)) })}/> years</span></label>
+            <label>Adjustment rate: shocks gone within<span><input type="number" min={0.5} max={30} step={0.5} value={design.settling} onChange={e => setDesign({ ...design, settling: Math.min(30, Math.max(0.5, Number(e.target.value) || 4)) })}/> years</span></label>
             <label>Largest overshoot<span><input type="number" min={1} max={90} step={1} value={design.overshoot} onChange={e => setDesign({ ...design, overshoot: Math.min(90, Math.max(1, Number(e.target.value) || 25)) })}/> %</span></label>
+            <label className="cycle-limit"><span><input type="checkbox" checked={!!design.minCycle} onChange={e => setDesign({ ...design, minCycle: e.target.checked ? 1.5 : null })}/> Shortest cycle allowed</span>{design.minCycle ? <span><input type="range" min={0.5} max={10} step={0.1} value={design.minCycle} aria-label="Shortest cycle allowed in years" onChange={e => setDesign({ ...design, minCycle: Number(e.target.value) })}/><input type="number" min={0.5} max={30} step={0.1} value={design.minCycle} onChange={e => setDesign({ ...design, minCycle: Math.min(30, Math.max(0.5, Number(e.target.value) || 1.5)) })}/> years</span> : <span className="muted small">no limit</span>}</label>
           </div>
           <h4>Controller gains <small className="muted">model units</small></h4>
           <LogSlider label="Kp, reacts to the price gap" value={design.K[0]} lo={0.05} hi={15} onChange={v => setK(0, v)}/>
@@ -198,7 +208,7 @@ export function PoleDesign({ design, setDesign, useInSimulation }: { design: Des
           <div className="chips">{presets.map(([id, label, K]) => <button key={id} onClick={() => setDesign({ ...design, K })}>{label}</button>)}</div>
           <div className="tune"><button className="secondary" disabled={tuning === 'Searching…'} onClick={tune}><Wand2 size={15}/> Find gains for my lines</button><label className="check"><input type="checkbox" checked={withS} onChange={e => setWithS(e.target.checked)}/> Also require shock rejection (S limit)</label>{tuning && <p className="muted small">{tuning}</p>}</div>
           {ev && <><h4>Robustness limits <small className="muted">see Robustness</small></h4><div className="lights"><Light ok={ev.limits.S <= 1} label="Shocks damped (S)" value={num(ev.limits.S)}/><Light ok={ev.limits.T <= 1} label="Silent where the model is wrong (T)" value={num(ev.limits.T)}/><Light ok={ev.limits.KS <= 1} label="Subsidy effort (KS)" value={num(ev.limits.KS)}/></div><p className="muted small">Each value must be at most 1.</p></>}
-          <div className="row"><label className="check"><input type="checkbox" checked={showOpen} onChange={e => setShowOpen(e.target.checked)}/> Market without policy (grey)</label><label className="check"><input type="checkbox" checked={showLocus} onChange={e => setShowLocus(e.target.checked)}/> Root locus, P only</label></div>
+          <div className="row"><label className="check"><input type="checkbox" checked={showOpen} onChange={e => setShowOpen(e.target.checked)}/> Market without policy (grey)</label><label className="check"><input type="checkbox" checked={showZeros} onChange={e => setShowZeros(e.target.checked)}/> Zeros (○)</label><label className="check"><input type="checkbox" checked={showLocus} onChange={e => setShowLocus(e.target.checked)}/> Root locus, P only</label></div>
           <button className="primary" onClick={useInSimulation}><Play size={15}/> Use these gains in the simulation</button>
         </div>
       </div>
@@ -220,11 +230,42 @@ export function PoleDesign({ design, setDesign, useInSimulation }: { design: Des
 
 // ---------- robustness
 interface MonteCarlo { n: number; perturb: number; stable: number; fraction: number; curves: { stable: boolean; S: number[] }[] }
+/** Root locus in the controller's dock: the same plot and spec lines as the Root locus page, driven by the simulation's own PID gains. */
+export function ControllerLocus({ K, filtered, setK, design, setDesign }: { K: K3; filtered: boolean; setK: (K: K3, preset?: string) => void; design: Design; setDesign: (d: Design) => void }) {
+  const [ov, setOv] = useState<Overview>(); const [err, setErr] = useState('');
+  const [showLocus, setShowLocus] = useState(false), [showZeros, setShowZeros] = useState(true), [tuning, setTuning] = useState('');
+  useEffect(() => { getOverview().then(setOv).catch(e => setErr(e.message)); }, []);
+  const { value: ev, error } = useDebounced(() => api<Evaluation>('/analysis/evaluate', { K, filtered, settling_yr: design.settling, overshoot_pct: design.overshoot, min_cycle_yr: design.minCycle ?? null }), [K.join(), filtered, design.settling, design.overshoot, design.minCycle], 80);
+  const tune = async () => {
+    setTuning('Searching…');
+    try { const r = await api<{ K: K3; met: boolean }>('/analysis/tune', { settling_yr: design.settling, overshoot_pct: design.overshoot, min_cycle_yr: design.minCycle ?? null, with_S: false, filtered }); setK(r.K.map(v => +v.toPrecision(4)) as K3); setTuning(r.met ? 'Every pole is now admissible.' : 'Closest gains found; not every pole is admissible.'); }
+    catch (e) { setTuning((e as Error).message); }
+  };
+  if (err) return <p className="state-note">{err}</p>;
+  if (!ov) return <p className="muted small"><LoaderCircle className="spin" size={14}/> Building the linear model…</p>;
+  const presets: [string, string, K3][] = [['zn', ov.presets.zn.label, ov.presets.zn.K], ['hinf', ov.presets.hinf.label, ov.presets.hinf.K], ['pole', ov.presets.pole.label, ov.presets.pole.K]];
+  return <div className="dock-locus">
+    <h4>Root locus <small className="muted">closed-loop poles of the price loop</small></h4>
+    <PolePlot ev={ev} ov={ov} spec={{ settling: design.settling, overshoot: design.overshoot, minCycle: design.minCycle }} setSpec={s => setDesign({ ...design, settling: s.settling, overshoot: s.overshoot, minCycle: s.minCycle })} showLocus={showLocus} showOpen={true} showZeros={showZeros}/>
+    {error && <p className="state-note">{error}</p>}
+    {ev && <div className={'verdict ' + (!ev.stable ? 'bad' : ev.outside ? 'warn' : 'good')}>{!ev.stable ? 'Unstable: a pole lies right of the axis.' : ev.outside ? `Stable. ${ev.outside} pole${ev.outside > 1 ? 's are' : ' is'} not admissible.` : 'Stable. Every pole is admissible.'}</div>}
+    <div className="spec-inputs">
+      <label>Adjustment rate: shocks gone within<span><input type="number" min={0.5} max={30} step={0.5} value={design.settling} onChange={e => setDesign({ ...design, settling: Math.min(30, Math.max(0.5, Number(e.target.value) || 4)) })}/> years</span></label>
+      <label>Largest overshoot<span><input type="number" min={1} max={90} step={1} value={design.overshoot} onChange={e => setDesign({ ...design, overshoot: Math.min(90, Math.max(1, Number(e.target.value) || 25)) })}/> %</span></label>
+            <label className="cycle-limit"><span><input type="checkbox" checked={!!design.minCycle} onChange={e => setDesign({ ...design, minCycle: e.target.checked ? 1.5 : null })}/> Shortest cycle allowed</span>{design.minCycle ? <span><input type="range" min={0.5} max={10} step={0.1} value={design.minCycle} aria-label="Shortest cycle allowed in years" onChange={e => setDesign({ ...design, minCycle: Number(e.target.value) })}/><input type="number" min={0.5} max={30} step={0.1} value={design.minCycle} onChange={e => setDesign({ ...design, minCycle: Math.min(30, Math.max(0.5, Number(e.target.value) || 1.5)) })}/> years</span> : <span className="muted small">no limit</span>}</label>
+    </div>
+    <div className="row"><label className="check"><input type="checkbox" checked={showLocus} onChange={e => setShowLocus(e.target.checked)}/> Locus (raise all gains)</label><label className="check"><input type="checkbox" checked={showZeros} onChange={e => setShowZeros(e.target.checked)}/> Zeros (○)</label></div>
+    <div className="chips">{presets.map(([id, label, k]) => <button key={id} onClick={() => setK(k, id === 'zn' || id === 'hinf' ? id : undefined)}>{label}</button>)}</div>
+    <div className="tune"><button className="secondary" disabled={tuning === 'Searching…'} onClick={tune}><Wand2 size={15}/> Find gains for my lines</button>{tuning && <p className="muted small">{tuning}</p>}</div>
+    {ev && <div className="lights"><Light ok={ev.limits.S <= 1} label="Shocks damped (S)" value={num(ev.limits.S)}/><Light ok={ev.limits.T <= 1} label="Silent where the model is wrong (T)" value={num(ev.limits.T)}/><Light ok={ev.limits.KS <= 1} label="Subsidy effort (KS)" value={num(ev.limits.KS)}/></div>}
+  </div>;
+}
+
 export function Robustness({ design }: { design: Design }) {
   const [ov, setOv] = useState<Overview>(); const [err, setErr] = useState('');
   const [perturb, setPerturb] = useState(20), [mc, setMc] = useState<{ design: MonteCarlo; zn: MonteCarlo; hinf: MonteCarlo } | null>(null), [busy, setBusy] = useState(false);
   useEffect(() => { getOverview().then(setOv).catch(e => setErr(e.message)); }, []);
-  const ev = (K: K3) => api<Evaluation>('/analysis/evaluate', { K, filtered: design.filtered, settling_yr: design.settling, overshoot_pct: design.overshoot });
+  const ev = (K: K3) => api<Evaluation>('/analysis/evaluate', { K, filtered: design.filtered, settling_yr: design.settling, overshoot_pct: design.overshoot, min_cycle_yr: design.minCycle ?? null });
   const { value: curves, error } = useDebounced(async () => { const o = await getOverview(); const [d, z, h] = await Promise.all([ev(design.K), ev(o.presets.zn.K), ev(o.presets.hinf.K)]); return { d, z, h }; }, [design.K.join(), design.filtered], 120);
   useEffect(() => setMc(null), [design.K.join(), design.filtered, perturb]);
   const draw = async () => {
@@ -258,7 +299,7 @@ export function Robustness({ design }: { design: Design }) {
   };
   const pct = (m: MonteCarlo) => `${Math.round(m.fraction * 100)}% stable (${m.stable} of ${m.n})`;
   return <>
-    <section className="panel"><h2>Robustness: does the policy survive a wrong model?</h2><p className="muted">Three curves against the cycle length of a shock, long cycles on the left. A design meets a limit when its curve stays out of the shaded area. Your design comes from the Pole design page.</p></section>
+    <section className="panel"><h2>Robustness: does the policy survive a wrong model?</h2><p className="muted">Three curves against the cycle length of a shock, long cycles on the left. A design meets a limit when its curve stays out of the shaded area. Your design comes from the Root locus page.</p></section>
     <div className="robust-grid">
       {card('S', 'S · shock passes through', 'How much of a price shock of that cycle length survives the policy. Small is good: the government fights cycles longer than about 3 years.', '|S|')}
       {card('T', 'T · reaction to the model', 'How strongly the policy acts on what the model says. It must be small where the model is wrong, for cycles shorter than about 1.5 years.', '|T|')}
@@ -272,6 +313,6 @@ export function Robustness({ design }: { design: Design }) {
       {busy && !mc && <p className="muted small">The first draw at a new uncertainty builds 100 markets, about 8 seconds.</p>}
     </section>
     <section className="panel"><h3>Guarantee instead of a sample (μ-analysis)</h3><p className="muted">The thesis reports that the H∞ PID stays stable for any combination of errors up to ±31% on 25 parameters. That number comes from the thesis version of the model and needs minutes of computation; it is not recomputed here for the run netlist.</p></section>
-    <p className="provenance">Weights are the thesis analysis's own choices: bandwidth 2 rad/yr (3.1-year cycle), peak 2, effort limit 8.2, model error from 150 random ±20% markets (seed 11). The ZN preset uses the thesis gains, set on an earlier version of the model; the Pole design page also offers ZN recomputed for this netlist.</p>
+    <p className="provenance">Weights are the thesis analysis's own choices: bandwidth 2 rad/yr (3.1-year cycle), peak 2, effort limit 8.2, model error from 150 random ±20% markets (seed 11). The ZN preset uses the thesis gains, set on an earlier version of the model; the Root locus page also offers ZN recomputed for this netlist.</p>
   </>;
 }
