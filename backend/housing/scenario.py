@@ -114,13 +114,14 @@ def b4_point_simulated(year: float = 2015.0) -> dict[str, float]:
 
 
 def _start_price(s: Scenario, u: float) -> float:
-    """Price at circuit time 0 (the DC operating point, all inputs at their t = 0 values) with the subsidy fixed at u."""
+    """Price at circuit time 0 with the subsidy fixed at u: the DC operating point (all inputs at their t = 0
+    values), from which the closed-loop transient starts. ngspice computes it with .op, without time steps; a short
+    transient here stopped with "timestep too small" on the Windows ngspice DLL (6 Nov 2026)."""
     lines = build(s.model_copy(update={"feedback": False, "share_control": False}))
     nl.set_constant_subsidy(lines, u)
-    nl.set_tran(lines, ".tran 0 0.01 0 0.005")
-    traces = engine.simulate(lines)
-    lower = {k.lower(): k for k in traces}
-    return float(traces[lower["i(construction_cost)"]][0])
+    point = engine.operating_point(lines)
+    lower = {k.lower(): k for k in point}
+    return point[lower["i(construction_cost)"]]
 
 
 SUBSIDY_LIMITS = (-60.0, 600.0)

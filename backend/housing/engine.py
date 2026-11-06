@@ -32,3 +32,13 @@ def simulate(lines: list[str]) -> dict[str, np.ndarray]:
         path = Path(folder) / "run.net"
         nl.write_netlist(lines, path)
         return ltspice.run(path)
+
+
+def operating_point(lines: list[str]) -> dict[str, float]:
+    """Every trace at circuit time 0 (the DC operating point, all inputs at their t = 0 values).
+    ngspice: a .op analysis, without time steps. LTspice: the first point of a 0.01 s transient."""
+    if name() == "ngspice":
+        return ngspice.operating_point(lines)
+    lines = list(lines)
+    nl.set_tran(lines, ".tran 0 0.01 0 0.005")
+    return {k: float(v[0]) for k, v in simulate(lines).items()}
