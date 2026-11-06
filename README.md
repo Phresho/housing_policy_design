@@ -25,6 +25,7 @@ After front-end edits: `cd frontend && npm run build` with the env's Node on PAT
 - PULSE with one zero edge: LTspice uses 10% of the on-time for that edge (the Covid shock rises over 1.5 s). Without this the 2020 Covid response differed by 1.4 in price.
 - `idt()` as a current into 1 F with `.ic`; `delay()` as an ideal transmission line; `ddt()` as a current through 1 H.
 - Trapezoidal integration (the netlist asks for Gear; with Gear ngspice's first time step stalls on this circuit).
+- 100 kOhm across every inductor, and 1 kOhm across the inductor that builds `ddt()` (a 1 ms filter). Node N019 is fed only by inductors, and the `ddt()` inductor only by a current source; trapezoidal integration rings there from the first step without decaying. The Mac build tolerated it, the Windows ngspice DLL on the VM stopped with "timestep too small" (6 Nov 2026). Effect on the price 0.0001 (1 kOhm and 10 kOhm still failed some runs); `tests/test_ngspice.py::test_runs_with_strict_tolerances` runs with tighter tolerances to catch it.
 - The B4 linearisation point (2015, non-linear B4 with gain -10) is stored in `scenario.B4_POINT`, because ngspice cannot run the non-linear B4 with gain -10. A test recomputes it with LTspice.
 
 Validation against LTspice (`tests/test_ngspice.py`, and 150 random slider settings on 5 Nov 2026): price within 0.05 (median 0.016%), year-on-year within 0.05 points, for open loop, H-infinity, ZN, the netlist PID, no bank, the fitted CBS inputs and the rental-share loop. ngspice is 3-5x faster (0.1-0.2 s a run). Unstable gains (for example a large unfiltered D) give chaotic saturated runs, where the two solvers differ after the first instability.
@@ -32,7 +33,7 @@ Validation against LTspice (`tests/test_ngspice.py`, and 150 random slider setti
 ## Hosting (Linux VM)
 Not yet tried on the VM. Expected steps:
 1. `pip install -r backend/requirements.txt`
-2. ngspice shared library: `sudo apt install libngspice0-dev` (Ubuntu/Debian; the `-dev` package provides `libngspice.so`), or build ngspice with `./configure --with-ngshared`. If PySpice does not find it, set `NGSPICE_LIBRARY_PATH` to the `libngspice.so` file.
+2. ngspice shared library: on Windows the ngspice DLL that PySpice can download (`pyspice-post-installation --install-ngspice-dll`), on Linux `sudo apt install libngspice0-dev` (Ubuntu/Debian; the `-dev` package provides `libngspice.so`), or build ngspice with `./configure --with-ngshared`. If PySpice does not find it, set `NGSPICE_LIBRARY_PATH` to the `libngspice.so` file.
 3. `cd frontend && npm ci && npm run build`
 4. `python backend/run.py --port 8001` behind the VM's web server. `python -m pytest -q tests` should pass there (the LTspice comparisons skip without LTspice).
 

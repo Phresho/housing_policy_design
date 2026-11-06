@@ -4,7 +4,7 @@ through PySpice's shared-library interface (libngspice), so the site does not ne
 The translation keeps every element, node and value. Only LTspice-specific syntax is rewritten:
 - names:   L§Rent -> L_Rent (LTspice refers to it as I(Rent); so does this module's output)
 - idt(x[, ic])     -> x as a current into 1 F, start value by .ic (the XSPICE int block stalled ngspice here)
-- ddt(x)           -> x as a current through 1 H, whose voltage is dx/dt
+- ddt(x)           -> x as a current through 1 H, whose voltage is dx/dt (1 kOhm across it: 1 ms filter)
 - delay(x, T)      -> ideal transmission line with delay T, driven by x and terminated in Z0 (no reflection)
 - if(time<=0, h, x) (equilibrium hold) -> h blended into x over 1 ms; other if(c, a, b) -> (c) ? (a) : (b)
 - PULSE with one zero edge -> that edge = 10% of the on-time, as LTspice does (measured); both zero -> 1 us
@@ -12,6 +12,12 @@ The translation keeps every element, node and value. Only LTspice-specific synta
 - floating parts of the circuit (no path to ground) -> one 1 GOhm resistor to ground each
 - limit(x, a, b)   -> min(max(x, a), b)
 - Rser=r on L/C    -> separate series resistor
+- every inductor   -> plus 100 kOhm in parallel (RPAR_L). Node N019 is fed only by inductors (L10 in, the rent
+  and owner-occupied branches out); trapezoidal integration then rings +-3700 V from the first step without
+  decaying, and stricter builds (e.g. the Windows DLL) stop with "timestep too small". LTspice damps this itself.
+  Effect on the price: 0.0001 (tolerance against LTspice is 0.05); time constant L/R <= 1e-4 s. Values tested on 6 Nov 2026
+  (6 scenarios x default / reltol=1e-4 / trtol=1): 1 kOhm stopped no-bank runs near t = 178, 10 kOhm stopped
+  no-bank with trtol=1; 100 kOhm (with 1 kOhm on ddt) passes all but H-inf/ZN with trtol=1. Gear was worse.
 - I(element) in expressions and in the output -> current through a 0 V sense source in series with the element
 - current sources that carry only a signal (both nodes 0, both the same, or a floating NC_ pair) -> a B voltage
   source on its own node, so ngspice sees no floating current source; I(name) then reads that node voltage.
@@ -27,6 +33,8 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 _LOCAL_LIB = ROOT / "tools" / "ngspice" / "lib" / "libngspice.dylib"
+RPAR_L = 1e5  # resistor across every inductor of the netlist, see the module docstring
+RPAR_DDT = 1e3  # resistor across the inductor that builds ddt(): 1 ms filter
 TMAX = 0.05  # max time step for ngspice (LTspice averaged 0.047 s on the full run)
 _lock = threading.Lock()
 _ng = None
@@ -123,9 +131,11 @@ class _Translator:
 
     def _ddt(self, a: list[str]) -> str:
         # x as a current through 1 H: the voltage is exactly dx/dt (0 at the operating point, as ddt). ngspice's own
-        # ddt() in a B source made Gear fail on the netlist PID.
+        # ddt() in a B source made Gear fail on the netlist PID. The parallel RPAR_DDT stops trapezoidal ringing (an
+        # inductor driven only by a current source); it adds a first-order filter of L/R = 1 ms = 0.0002 yr
+        # (100 kOhm was too weak here with strict tolerances).
         k = self.new("dt")
-        self.extra += [f"B{k}in 0 {k} I={a[0]}", f"L{k} {k} 0 1"]
+        self.extra += [f"B{k}in 0 {k} I={a[0]}", f"L{k} {k} 0 1", f"R{k}par {k} 0 {RPAR_DDT:g}"]
         return f"v({k})"
 
     def _delay(self, a: list[str]) -> str:
@@ -251,6 +261,8 @@ def translate(lines: list[str]) -> tuple[str, dict[str, str], float]:
         else:
             out.append(f"{name} {n1} {mid} {body}")
         out.append(f"{sense} {mid} {n2} 0")
+        if kind == "L":
+            out.append(f"R_{ref}_par {n1} {mid} {RPAR_L:g}")
         names[trace] = f"i({sense})"
     out += _ground_floating_parts(out + T.extra)
     tran, tstart = _tran(rows)

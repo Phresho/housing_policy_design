@@ -57,3 +57,29 @@ def test_stored_b4_point_is_the_ltspice_value():
     t = (2015.0 - YEAR_AT_RAW_ZERO) * SECONDS_PER_YEAR
     for k, v in B4_POINT.items():
         assert np.interp(t, tr["time"], tr[k]) == pytest.approx(v, rel=1e-6), k
+
+
+@needs_ng
+@pytest.mark.parametrize("options", [".options reltol=1e-4"])  # trtol=1 (7 is the default) still stops H-inf/ZN
+@pytest.mark.parametrize("s", [Scenario(), Scenario(feedback=True, controller="hinf"), Scenario(feedback=True, controller="zn")],
+                         ids=["open", "hinf", "zn"])
+def test_runs_with_strict_tolerances(monkeypatch, s, options):
+    """Stricter settings than the default reproduce the 'timestep too small' stop seen with the Windows ngspice DLL
+    (trapezoidal ringing at the inductor-only node N019). The parallel resistors on the inductors prevent it."""
+    translate = ng.translate
+    def strict(lines):
+        text, names, tstart = translate(lines)
+        return text.replace("\n.end", "\n" + options + "\n.end"), names, tstart
+    monkeypatch.setattr(ng, "translate", strict)
+    eq = equilibrium_subsidy(s) if s.feedback and s.equilibrium_start else None
+    d = ng.run_lines(build(s, u_start=eq["u_start"] if eq else None))
+    assert np.all(np.isfinite(d["I(Construction_cost)"]))
+
+
+@needs_ng
+@pytest.mark.parametrize("options", ["", ".options reltol=1e-4"])
+@pytest.mark.parametrize("s", [Scenario(bank=False), Scenario(bank=False, controller="zn", rental_subsidy=False)],
+                         ids=["nobank", "nobank-norent"])
+def test_no_bank_runs_finish(monkeypatch, s, options):
+    """With 1 kOhm across the inductors these stopped at t = 178 (random-settings check, 6 Nov 2026)."""
+    test_runs_with_strict_tolerances(monkeypatch, s, options or ".options reltol=1e-3")
