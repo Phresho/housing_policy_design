@@ -45,6 +45,7 @@ INIT = {
 RUNS = {
     "open": Scenario(),
     "open_nobank": Scenario(bank=False),
+    "open_nobank_norent": Scenario(bank=False, rental_subsidy=False),
     "hinf": Scenario(feedback=True, controller="hinf"),
     "zn": Scenario(feedback=True, controller="zn"),
     "netlist_pid": Scenario(feedback=True, controller="netlist"),
@@ -186,10 +187,10 @@ def main() -> int:
                 print(f"init        {opt:8s} {name:10s} u={u:4.0f}", "OK " if r["ok"] else "FAIL", r.get("value", r.get("error")), f"{r['seconds']} s", flush=True)
         saved = os.environ.get("HOUSING_NGSPICE_TIMEOUT")
         os.environ["HOUSING_NGSPICE_TIMEOUT"] = str(a.legacy_timeout)
-        for u in (0.0, 30.0):
-            r = timed(lambda: legacy_start_price(INIT["hinf"], u))
-            legacy.append({"scenario": "hinf", "options": opt, "u": u, **r})
-            print(f"init-legacy {opt:8s} {'hinf':10s} u={u:4.0f}", "OK " if r["ok"] else "fail (info)", r.get("value", r.get("error")), f"{r['seconds']} s", flush=True)
+        for lname, u in (("hinf", 0.0), ("hinf", 30.0), ("nobank_zn", 30.0)):
+            r = timed(lambda: legacy_start_price(INIT[lname], u))
+            legacy.append({"scenario": lname, "options": opt, "u": u, **r})
+            print(f"init-legacy {opt:8s} {lname:10s} u={u:4.0f}", "OK " if r["ok"] else "fail (info)", r.get("value", r.get("error")), f"{r['seconds']} s", flush=True)
         if saved is None:
             os.environ.pop("HOUSING_NGSPICE_TIMEOUT")
         else:

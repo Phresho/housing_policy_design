@@ -95,11 +95,13 @@ def test_no_bank_runs_finish(monkeypatch, s, options):
                                Scenario(interest_scale=1.8, income_path="stable")], ids=["hinf", "nobank-zn", "rate"])
 @pytest.mark.parametrize("u", [0.0, 30.0, -40.0])
 def test_operating_point_is_the_transient_start(s, u):
-    """The equilibrium start uses a .op analysis (no time steps). It must equal the first point of the transient."""
+    """The equilibrium start uses a .op analysis (no time steps). It must equal the first point of the transient.
+    The transient here uses the run's own step settings (0.01 s step); the old 0.01 s initialisation transient
+    (.tran 0 0.01 0 0.005) hung on the Windows DLL for nobank-zn at u = 30 (GitHub Actions, 6 Nov 2026)."""
     lines = build(s.model_copy(update={"feedback": False, "share_control": False}))
     nl.set_constant_subsidy(lines, u)
     op = ng.operating_point(lines)["I(Construction_cost)"]
-    nl.set_tran(lines, ".tran 0 0.01 0 0.005")
+    nl.set_tran(lines, ".tran 0.01 1 0")
     tran = ng.run_lines(lines)["I(Construction_cost)"][0]
     assert abs(op - tran) < 1e-6
 
