@@ -6,3 +6,5 @@ tools/
 __pycache__/
 .pytest_cache/
 *.tsbuildinfo
+.DS_Store
+vm_check/

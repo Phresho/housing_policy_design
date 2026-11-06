@@ -265,3 +265,17 @@ def set_crisis_pwl(lines: list[str], pulses: list[tuple[float, float, float, flo
     pts = " ".join(f"{t:.6g} {sum(_trapezoid(t, *p) for p in pulses):.6g}" for t in sorted(corners))
     i = _index(lines, "V§Shock_financialcrisis ")
     lines[i] = _sub_exact(lines[i], CRISIS_PULSE, f"PWL({pts})")
+
+
+def scale_elements(lines: list[str], scale: dict[str, float]) -> None:
+    """Multiply the value of R, L and C elements by name, e.g. {"C2": 1.3} (model parameters for the
+    system-identification design). Keeps any Rser=... after the value."""
+    for name, factor in scale.items():
+        if factor == 1:
+            continue
+        if name[:1] not in "RLC":
+            raise ValueError(f"only R, L and C values can be scaled, not {name}")
+        i = _index(lines, name + " ")
+        tok = lines[i].split()
+        tok[3] = f"{float(tok[3]) * factor:.6g}"
+        lines[i] = " ".join(tok)

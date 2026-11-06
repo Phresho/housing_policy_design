@@ -59,7 +59,15 @@ function PortMark({ x, y, w, h, flow, selected, pick, ret }: { x: number; y: num
 
 const BREADBOARD = <defs><pattern id="breadboard" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="10" cy="10" r="1.6" fill="#c9bb9c"/></pattern></defs>;
 
-export function AgentCircuit({ map, agent, scenario, selection, pick, menu }: { map: MapData; agent: string; scenario: Scenario; selection: Selection; pick: (s: Selection) => void; menu?: (s: Selection, ev: React.MouseEvent) => void }) {
+/** Dashed arrow from where a disturbance enters the block (same spacing as the canvas arrows in ModelMap) to the
+ * source element it drives. Left entry: across, then down/up to the element; top entry: down, then across. */
+function inputPath(side: 'left' | 'top', i: number, n: number, size: [number, number], pins: number[][]): number[][] {
+  const [w, h] = size, cx = (pins[0][0] + pins[1][0]) / 2, cy = (pins[0][1] + pins[1][1]) / 2, gap = 38;
+  if (side === 'left') { const y = h * (i + 1) / (n + 1); return Math.abs(y - cy) < gap ? [[0, y], [cx - gap, y]] : [[0, y], [cx, y], [cx, cy + (y < cy ? -gap : gap)]]; }
+  const x = w * (i + 1) / (n + 1); return Math.abs(x - cx) < gap ? [[x, 0], [x, cy - gap]] : [[x, 0], [x, cy], [cx + (x < cx ? -gap : gap), cy]];
+}
+const SHOCK_RED = '#c5352a', SUBSIDY_BLUE = '#1f6fc4';
+export function AgentCircuit({ map, agent, scenario, selection, pick, menu, inputs = [], inputSide = 'left' }: { map: MapData; agent: string; scenario: Scenario; selection: Selection; pick: (s: Selection) => void; menu?: (s: Selection, ev: React.MouseEvent) => void; inputs?: { id: string; label: string; element?: string }[]; inputSide?: 'left' | 'top' }) {
   const layout = map.layouts[agent], [w, h] = layout.size;
   const hidden = (e: Element) => (e.name === 'I§Owner_occupied_subsidies' && scenario.feedback) || (e.name === 'B§PID' && !scenario.feedback);
   const elements = map.elements.filter(e => e.agent === agent && !hidden(e));
@@ -67,11 +75,16 @@ export function AgentCircuit({ map, agent, scenario, selection, pick, menu }: { 
   const line = (w: number[]) => `M${w[0]} ${w[1]}L${w[2]} ${w[3]}`;
   return <svg className="circuit embedded" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label={`${map.agents[agent].label} circuit`}>
     {BREADBOARD}<rect x={0} y={0} width={w} height={h} fill="url(#breadboard)"/>
+    <defs>{([['shock', SHOCK_RED], ['subsidy', SUBSIDY_BLUE]] as const).map(([k, c]) => <marker key={k} id={`in-${agent}-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="22" markerHeight="22" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 10 5 0 10z" fill={c}/></marker>)}</defs>
     <g className="return-wires">{[...layout.return_wires, ...layout.common_returns].map((r, i) => <path key={i} d={line(r)}/>)}{layout.dots.map(([x, y], i) => <circle key={`d${i}`} className="return-dot" cx={x} cy={y} r={5}/>)}</g>
     <g className="wires">{layout.wires.map((r, i) => <path key={i} d={line(r)}/>)}</g>
     <g className="grounds">{layout.grounds.map(([x, y], i) => <path key={i} d={`M${x - 14} ${y}H${x + 14}L${x} ${y + 16}Z`}/>)}</g>
-    {layout.signals.map(sig => <g key={sig.flow} className={`u-signal${selection.kind === 'flow' && selection.id === sig.flow ? ' selected' : ''}`} role="button" tabIndex={0} aria-label={`Control signal ${flow(sig.flow).label}`} onClick={ev => { ev.stopPropagation(); pick({ kind: 'flow', id: sig.flow }); }} onContextMenu={ev => { if (menu) { ev.preventDefault(); ev.stopPropagation(); menu({ kind: 'flow', id: sig.flow }, ev); } }}>
-      <path d={sig.path.map(([x, y], j) => `${j ? 'L' : 'M'}${x} ${y}`).join('')}/></g>)}
+    {layout.signals.filter(sig => sig.flow !== 'rental_subsidy' || scenario.rental_subsidy).map(sig => <g key={sig.flow} className={`u-signal${selection.kind === 'flow' && selection.id === sig.flow ? ' selected' : ''}`} role="button" tabIndex={0} aria-label={`Control signal ${flow(sig.flow).label}`} onClick={ev => { ev.stopPropagation(); pick({ kind: 'flow', id: sig.flow }); }} onContextMenu={ev => { if (menu) { ev.preventDefault(); ev.stopPropagation(); menu({ kind: 'flow', id: sig.flow }, ev); } }}>
+      <path d={sig.path.map(([x, y], j) => `${j ? 'L' : 'M'}${x} ${y}`).join('')} markerEnd={`url(#in-${agent}-subsidy)`}/></g>)}
+    {inputs.map((d, i) => { const e = d.element ? map.elements.find(x => x.name === d.element && x.agent === agent) : undefined; if (!e || !e.pins || e.pins.length < 2) return null;
+      const pts = inputPath(inputSide, i, inputs.length, [w, h], e.pins);
+      return <g key={d.id} className={`d-input${selection.kind === 'signal' && selection.id === d.id ? ' selected' : ''}`} role="button" tabIndex={0} aria-label={`Disturbance ${d.label} enters at ${e.name}`} onClick={ev => { ev.stopPropagation(); pick({ kind: 'signal', id: d.id }); }}>
+        <title>{`${d.label} enters here`}</title><path d={pts.map(([x, y], j) => `${j ? 'L' : 'M'}${x} ${y}`).join('')} markerEnd={`url(#in-${agent}-shock)`}/></g>; })}
     {elements.map(e => <ElementView key={e.name} e={e} state={stateOf(e, scenario)} selected={selection.kind === 'element' && selection.id === e.name} pick={() => pick({ kind: 'element', id: e.name })} menu={menu && (ev => menu({ kind: 'element', id: e.name }, ev))}/>)}
   </svg>;
 }

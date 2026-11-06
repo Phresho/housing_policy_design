@@ -78,16 +78,44 @@ class Pick(BaseModel):
     id: str = Field(max_length=80)
 
 
+def _check_scale(scale: dict[str, float]) -> dict[str, float]:
+    for name, f in scale.items():
+        if name[:1] not in "RLC" or not (0.05 <= f <= 20):
+            raise HTTPException(422, f"Model parameter {name} x{f}: only R, L, C values, factor 0.05-20.")
+    return scale
+
+
 class TransferRequest(Gains):
     input: Pick
     output: Pick
     feedback: bool = False
+    scale: dict[str, float] = Field(default_factory=dict, max_length=60)
+
+
+class IdentifyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scale: dict[str, float] = Field(default_factory=dict, max_length=60)
+
+
+class PolePathRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    start: dict[str, float] = Field(default_factory=dict, max_length=60)
+    end: dict[str, float] = Field(default_factory=dict, max_length=60)
+
+
+class DesignParamsRequest(IdentifyRequest):
+    adjust_yr: float = Field(ge=0.3, le=40)
+    cycle_yr: float | None = Field(None, ge=0.5, le=40)
+    elements: list[str] = Field(min_length=1, max_length=12)
+    lo: float = Field(0.2, ge=0.05, le=1)
+    hi: float = Field(5.0, ge=1, le=20)
 
 
 class StepsRequest(Gains):
     input: Pick
     outputs: list[Pick] = Field(max_length=20)
     feedback: bool = True
+    scale: dict[str, float] = Field(default_factory=dict, max_length=60)
 
 
 class FitCpbRequest(BaseModel):
@@ -167,16 +195,36 @@ def create_app(database: Path | None = None) -> FastAPI:
     @app.post("/api/analysis/transfer")
     def analysis_transfer(r: TransferRequest):
         try:
-            return analysis.transfer(r.input.model_dump(), r.output.model_dump(), r.feedback, r.gains(), r.filtered)
+            return analysis.transfer(r.input.model_dump(), r.output.model_dump(), r.feedback, r.gains(), r.filtered, _check_scale(r.scale))
         except (ValueError, KeyError, StopIteration) as error:
             raise HTTPException(422, str(error) or "This pair cannot be analysed.") from error
 
     @app.post("/api/analysis/steps")
     def analysis_steps(r: StepsRequest):
         try:
-            return analysis.steps(r.input.model_dump(), [o.model_dump() for o in r.outputs], r.feedback, r.gains(), r.filtered)
+            return analysis.steps(r.input.model_dump(), [o.model_dump() for o in r.outputs], r.feedback, r.gains(), r.filtered, scale=_check_scale(r.scale))
         except (ValueError, KeyError, StopIteration) as error:
             raise HTTPException(422, str(error) or "This input cannot be used.") from error
+
+    @app.post("/api/analysis/identify")
+    def analysis_identify(r: IdentifyRequest):
+        """Open loop, subsidy -> house price: poles, step response, adjustment time, cycle (system identification)."""
+        return analysis.identify(_check_scale(r.scale))
+
+    @app.post("/api/analysis/pole_path")
+    def analysis_pole_path(r: PolePathRequest):
+        return {"path": analysis.pole_path(_check_scale(r.start), _check_scale(r.end))}
+
+    @app.post("/api/analysis/sensitivity")
+    def analysis_sensitivity(r: IdentifyRequest):
+        return {"rows": analysis.sensitivity(_check_scale(r.scale))}
+
+    @app.post("/api/analysis/design_params")
+    def analysis_design_params(r: DesignParamsRequest):
+        try:
+            return analysis.design_params(r.adjust_yr, r.cycle_yr, r.elements, _check_scale(r.scale), r.lo, r.hi)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
 
     @app.post("/api/analysis/montecarlo")
     def analysis_montecarlo(r: MonteCarloRequest):

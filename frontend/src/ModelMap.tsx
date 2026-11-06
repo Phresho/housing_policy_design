@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BaseEdge, Controls, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow, useStore, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Maximize2, Minus, Plus } from 'lucide-react';
+import { Activity, Camera, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, LoaderCircle, Maximize2, Minus, Plus } from 'lucide-react';
+import { savePng } from './shot';
+import { IdentPanel } from './Ident';
 import { api } from './api';
 import { Chart, type Line } from './Chart';
 import { AgentCircuit, CONTROLLER_SIZE, ControllerCircuit, STATE_NOTE, stateOf, type GainKey } from './Schematic';
@@ -118,7 +120,7 @@ const LOOP_SIGNALS: Record<string, { label: string; title: string; signal: strin
   y_error: { label: 'Gap e', title: 'Gap e · target minus price', signal: 'I(Error)', unit: 'Model units', color: '#1f2a26', step: { kind: 'signal', id: 'y_error' }, dock: { kind: 'signal', id: 'y_error' } },
   x1: { label: 'Construction payments', title: 'State x₁ · Construction payments', signal: 'I(Construction_cost)', unit: 'Model units', color: '#e0782a', step: { kind: 'signal', id: 'y_price' }, dock: { kind: 'signal', id: 'y_price' } },
   x2: { label: 'New construction', title: 'State x₂ · New construction', signal: 'I(Construction)', unit: '#/year', color: '#c98a1b', step: { kind: 'flow', id: 'houses' }, dock: { kind: 'flow', id: 'houses' } },
-  y_price: { label: 'House price index', title: 'Output y · House price index', signal: 'I(Construction_cost)', unit: 'Model units', color: '#3f9a1f', step: { kind: 'signal', id: 'y_price' }, dock: { kind: 'signal', id: 'y_price' } },
+  y_price: { label: 'House price', title: 'Output y · House price', signal: 'I(Construction_cost)', unit: 'Model units', color: '#3f9a1f', step: { kind: 'signal', id: 'y_price' }, dock: { kind: 'signal', id: 'y_price' } },
 };
 function probeInfo(map: MapData, p: Probe) {
   const loop = p.q === 's' ? LOOP_SIGNALS[p.flow] : undefined;
@@ -126,20 +128,30 @@ function probeInfo(map: MapData, p: Probe) {
   if (p.q === 's') {
     const d = map.disturbances.find(x => x.id === p.flow), f = map.flows.find(x => x.id === p.flow);
     const label = d?.label ?? f?.label ?? p.flow;
-    return { f: f ?? { id: p.flow, label, short: label, kind: 'policy', port: null, unit: d?.unit ?? '' } as unknown as Flow, signal: d?.signal ?? f?.signal, title: `${d ? 'Disturbance d' : 'Subsidy u'} · ${label}`, unit: d?.unit ?? f?.unit ?? '', color: d ? SHOCK : COLOR.policy,
+    return { f: f ?? { id: p.flow, label, short: label, kind: 'policy', port: null, unit: d?.unit ?? '' } as unknown as Flow, signal: d?.signal ?? f?.signal, title: `${label} · ${d ? 'disturbance d' : 'subsidy u'}`, unit: d?.unit ?? f?.unit ?? '', color: d ? SHOCK : COLOR.policy,
       step: f ? { kind: 'flow', id: f.id } as const : undefined };
   }
   const f = map.flows.find(x => x.id === p.flow)!;
   const signal = p.q === 'f' ? f.signal : f.port ? (f.port.ret === '0' ? `V(${f.port.node})` : `V(${f.port.node},${f.port.ret})`) : undefined;
-  return { f, signal, title: `${p.q === 'f' ? 'Flow f' : 'Effort e'} · ${f.label}`, unit: p.q === 'f' ? f.unit : 'Model units (node voltage)', color: p.q === 'f' ? COLOR[f.kind] : '#6b4fa0',
+  return { f, signal, title: `${f.label} · ${p.q === 'f' ? 'flow f' : 'effort e'}`, unit: p.q === 'f' ? f.unit : 'Model units (node voltage)', color: p.q === 'f' ? COLOR[f.kind] : '#6b4fa0',
     step: { kind: p.q === 'f' ? 'flow' : 'effort', id: f.id } as const };
 }
 function MiniPlot({ y, at, color, w = 240, h = 92, k = 1 }: { y: number[]; at?: number; color: string; w?: number; h?: number; k?: number }) {
-  const lo = Math.min(...y), hi = Math.max(...y), sx = (i: number) => 4 + i / (y.length - 1) * (w - 8), sy = (v: number) => h - 4 - (hi > lo ? (v - lo) / (hi - lo) : .5) * (h - 8);
+  // White space above and below the line (10% of the range plus room for the max/min labels), so a step that jumps
+  // straight to its final value does not run along the top edge.
+  const lo = Math.min(...y), hi = Math.max(...y), pad = (hi - lo) * .1, top = 18 * k, bot = 16 * k;
+  const sx = (i: number) => 4 + i / (y.length - 1) * (w - 8), sy = (v: number) => h - bot - (hi > lo ? (v - lo + pad) / (hi - lo + 2 * pad) : .5) * (h - top - bot);
   return <svg width={w} height={h} className="mini-plot"><rect x={0} y={0} width={w} height={h} fill="#fff"/><polyline fill="none" stroke={color} strokeWidth={2.2 * k} strokeLinejoin="round" points={y.map((v, i) => `${sx(i)},${sy(v)}`).join(' ')}/>
     {lo < 0 && hi > 0 && <line x1={0} x2={w} y1={sy(0)} y2={sy(0)} stroke="#d5dbd8"/>}
     {at !== undefined && <><line x1={sx(at)} x2={sx(at)} y1={2} y2={h - 2} stroke="#8a9692" strokeDasharray="3 3"/><circle cx={sx(at)} cy={sy(y[at])} r={3.2 * k} fill={color}/></>}
     <text x={w - 4} y={11 * k} textAnchor="end" className="mini-tick">{fmt(hi)}</text><text x={w - 4} y={h - 6 * k} textAnchor="end" className="mini-tick">{fmt(lo)}</text></svg>;
+}
+// Card buttons (Bode, →CBS, dock, close) hidden behind a small arrow, so the title has room. Shown while a Bode plot
+// is being built, so the output card's Bode→ can be clicked.
+function PinTools({ children, keepOpen }: { children: React.ReactNode; keepOpen?: boolean }) {
+  const [open, setOpen] = useState(false), show = open || !!keepOpen;
+  return <span className={'pin-tools' + (show ? ' open' : '')}>{show && children}
+    {!keepOpen && <button className="tools-toggle" aria-label={show ? 'Hide the card buttons' : 'Show the card buttons'} title={show ? 'Hide the buttons' : 'Bode, send to CBS, dock, remove'} onClick={() => setOpen(o => !o)}>{show ? '›' : '‹'}</button>}</span>;
 }
 // Plot cards live in their own layer, scaled with the canvas but drawn above the block headers.
 const PIN_W = 252, PIN_H = 150;
@@ -179,7 +191,7 @@ function PinLayer({ map, probes, result, at, fallback, steps }: { map: MapData; 
     const title = c.kind === 'sens' ? 'S, T, KS · price loop' : c.kind === 'cbs' ? 'Year-on-year house price change · model and CBS' : `Bode · ${probeInfo(map, c.from).f.label} → ${probeInfo(map, c.to).f.label}`;
     const S = sz(id, c.kind), bw = S.w - 16, D = DEFAULT[c.kind], f = Math.max(1, Math.min(S.w / D.w, S.h / D.h));
     return <div key={id} className={'pin-card chart-card ' + c.kind} style={{ left: pos.x, top: pos.y, width: S.w, height: S.h, ['--s' as string]: f }} onPointerDown={drag(id, base)}>{handle(id, c.kind)}
-      <div className="pin-head"><strong title={title}>{title}</strong>{c.kind === 'cbs' && <button aria-label="Send to the dock" title="Open the CBS sensor in the dock" onClick={probes.openSensor}>⇥</button>}<button aria-label="Remove from the canvas" title="Remove from the canvas" onClick={() => probes.removeChart(id)}>×</button></div>
+      <div className="pin-head"><strong title={title}>{title}</strong><PinTools>{c.kind === 'cbs' && <button aria-label="Send to the dock" title="Open the CBS sensor in the dock" onClick={probes.openSensor}>⇥</button>}<button aria-label="Remove from the canvas" title="Remove from the canvas" onClick={() => probes.removeChart(id)}>×</button></PinTools></div>
       {c.kind === 'cbs' ? <><YoyBody k={f} w={bw} h={S.h - 64 * f} year={result?.year} model={result?.scenario.inflation_pct ? result.series.yoy.map(v => v + result.scenario.inflation_pct) : result?.series.yoy} cbs={probes.cbs} lag={probes.lag} cpb={probes.cpb}/><small>Green: model run{result ? '' : ' (run the simulation)'}.{probes.cpb ? ' Green dashed: CPB model.' : ''} Grey: CBS index, moved {probes.lag} month{Math.abs(probes.lag) === 1 ? '' : 's'}. % a year.</small></>
       : c.kind === 'sens' ? <SensBody k={f} w={bw} h={S.h - 100 * f} K={probes.ctx.K} filtered={probes.ctx.filtered} settling={probes.ctx.settling} overshoot={probes.ctx.overshoot}/>
         : <BodeBody k={f} w={bw} h={S.h - 74 * f} input={probeInput(map, c.from)!} output={probeInfo(map, c.to).step!} feedback={probes.ctx.feedback} K={probes.ctx.K} filtered={probes.ctx.filtered}/>}</div>;
@@ -193,14 +205,14 @@ function PinLayer({ map, probes, result, at, fallback, steps }: { map: MapData; 
     const sent = probes.sensed.some(q => probeKey(q) === probeKey(p));
     const S = sz(id, 'probe'), f = Math.max(1, Math.min(S.w / PIN_W, S.h / PIN_H)), pw = S.w - 12 * f, ph = S.h - 58 * f;
     return <div key={id} className={'pin-card' + (steps ? ' step-mode' : '')} style={{ left: pos.x, top: pos.y, width: S.w, height: S.h, ['--s' as string]: f }} onPointerDown={drag(id, base)}>{handle(id, 'probe')}
-      <div className="pin-head"><strong title={info.title}>{info.title}</strong>
+      <div className="pin-head"><strong title={info.title}>{steps ? `${info.f.label} · step response` : info.title}</strong><PinTools keepOpen={!!probes.bodeFrom}>
         {(() => { const from = probes.bodeFrom, isFrom = !!from && probeKey(from) === probeKey(p), canIn = !!probeInput(map, p);
           return from ? <button className={isFrom ? 'on' : 'bode-ready'} title={isFrom ? 'Cancel the Bode plot' : 'Bode plot from the marked input to this signal'} aria-label={isFrom ? 'Cancel Bode' : 'Bode to here'}
               onClick={() => { if (isFrom) probes.setBodeFrom(null); else { const a = probes.pos[`pin-${probeKey(from)}`] ?? fallback[`pin-${probeKey(from)}`] ?? pos; probes.addBode(from, p, { x: (a.x + pos.x) / 2 + 20, y: (a.y + pos.y) / 2 + PIN_H + 30 }); } }}>{isFrom ? 'in ✕' : 'Bode→'}</button>
             : <button disabled={!canIn} title={canIn ? 'Use as the input of a Bode plot, then click Bode→ on the output card' : 'An effort or an output cannot be an input'} aria-label="Bode from here" onClick={() => probes.setBodeFrom(p)}>Bode</button>; })()}
         <button className={sent ? 'on' : ''} aria-label={sent ? 'Stop sending to CBS' : 'Send to CBS'} title={sent ? 'Stop sending to CBS' : 'Send to CBS'} onClick={() => probes.sense(p)}>→CBS</button>
         <button aria-label="Send to the dock" title="Send to the dock" onClick={() => probes.dock(p)}>⇥</button>
-        <button aria-label="Remove from the canvas" title="Remove from the canvas" onClick={() => probes.unpin(p)}>×</button></div>
+        <button aria-label="Remove from the canvas" title="Remove from the canvas" onClick={() => probes.unpin(p)}>×</button></PinTools></div>
       {steps ? st?.y ? <><MiniPlot y={st.y} color={color} w={pw} h={ph} k={f}/><small>Step response to {steps.input} +1 · after {st.t![st.t!.length - 1].toFixed(0)} yr: <b>{fmt(st.y[st.y.length - 1])}</b></small></> : <small className="muted">{st?.error ?? 'Computing…'}</small>
         : y ? <><MiniPlot y={y} at={at} color={color} w={pw} h={ph} k={f}/><small>{result!.year[at].toFixed(1)}: <b>{fmt(y[at])}</b></small></> : <small className="muted">Run the simulation to see this signal.</small>}</div>;
   })}</div>;
@@ -212,10 +224,10 @@ const nodeTypes = { block: Block };
 // (below the headers of the blocks that contain it) until the block itself leaves the view.
 const HEAD_FLOW = 30, HEAD_MAX = 30; // header height in model units, and its cap in screen pixels
 const DEPTH: Record<string, number> = { 'system-group': 0, controller: 0, 'sub-group': 1, agent: 2 };
-function StickyHeaders({ nodes }: { nodes: Node<BlockData>[] }) {
+function StickyHeaders({ nodes, lab = 1 }: { nodes: Node<BlockData>[]; lab?: number }) {
   const [tx, ty, k] = useStore(s => s.transform), W = useStore(s => s.width), H = useStore(s => s.height);
   return <div className="sticky-heads">{nodes.filter(n => n.data.open).map(n => {
-    const d = n.data, depth = DEPTH[d.tone.split(' ')[0]] ?? 0, HEAD_H = Math.min(HEAD_MAX, HEAD_FLOW * k);
+    const d = n.data, depth = DEPTH[d.tone.split(' ')[0]] ?? 0, HEAD_H = Math.min(HEAD_MAX * lab, HEAD_FLOW * lab * k);
     const left = tx + n.position.x * k, top = ty + n.position.y * k, right = left + d.width * k, bottom = top + d.height * k;
     const x0 = Math.max(left, 0), x1 = Math.min(right, W);
     if (x1 - x0 < 20 || bottom < depth * HEAD_H + HEAD_H || top > H) return null;
@@ -266,18 +278,19 @@ function Rail({ id, data }: EdgeProps<Edge<RailData>>) {
     })}
   </g>;
 }
-type SignalData = { points: Point[]; color: string; letter: string; name?: string; sub?: string; value?: string; markAt?: number; markDist?: number; dashed?: boolean; selected?: boolean; pick?: (e?: React.MouseEvent) => void; labelSide?: 'right' | 'left' | 'above' | 'below'; target?: Selection; menu?: (e: React.MouseEvent) => void; switchAt?: Point; switchOpen?: boolean; onSwitch?: () => void; animate?: boolean };
+type SignalData = { points: Point[]; lab?: number; color: string; letter: string; name?: string; sub?: string; value?: string; markAt?: number; markDist?: number; dashed?: boolean; selected?: boolean; pick?: (e?: React.MouseEvent) => void; labelSide?: 'right' | 'left' | 'above' | 'below'; target?: Selection; menu?: (e: React.MouseEvent) => void; switchAt?: Point; switchOpen?: boolean; onSwitch?: () => void; animate?: boolean };
 function Signal({ id, data }: EdgeProps<Edge<SignalData>>) {
   const d = data!, k = d.markAt ?? 1, [p, q] = [d.points[k - 1], d.points[k]], m = along(p, q, d.markDist ?? Math.min(len(p, q) / 2, 60));
   const side = d.labelSide ?? (Math.abs(q[0] - p[0]) < .5 ? 'right' : 'above');
-  const lx = side === 'right' ? m[0] + 13 : side === 'left' ? m[0] - 13 : m[0], ly = side === 'above' ? m[1] - (d.value ? 26 : 13) : side === 'below' ? m[1] + 22 : m[1] - 2;
+  const L = d.lab ?? 1; // label size factor (Label size slider)
+  const lx = side === 'right' ? m[0] + 13 : side === 'left' ? m[0] - 13 : m[0], ly = side === 'above' ? m[1] - (d.value ? 26 * L : 13 * L) : side === 'below' ? m[1] + 22 * L : m[1] - 2;
   return <g className={'signal' + (d.selected ? ' selected' : '')}>
     <defs><marker id={`s-${id}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 10 5 0 10z" fill={d.color}/></marker></defs>
     <BaseEdge id={id} path={toPath(d.points)} markerEnd={`url(#s-${id})`} style={{ stroke: d.color, strokeWidth: d.selected ? 3.2 : 1.6, strokeDasharray: d.dashed ? '6 5' : undefined }}/>
     {d.animate && !d.dashed && <path d={toPath(d.points)} className="flow-dots small" stroke={d.color}/>}
     <circle cx={m[0]} cy={m[1]} r={8} fill="#fff" stroke={d.color} strokeWidth={1.3}/><text className="sig-letter" x={m[0]} y={m[1] + 3.6} fill={d.color}>{d.letter}</text>
-    {d.name && <text className="sig-name" x={lx} y={ly} textAnchor={side === 'right' ? 'start' : side === 'left' ? 'end' : 'middle'} fill={d.color}>{d.name}{d.value && <tspan className="sig-value" x={lx} dy={13}>{d.value}</tspan>}</text>}
-    {d.sub && <text className="sig-sub" x={side === 'right' ? m[0] - 13 : side === 'left' ? m[0] + 13 : m[0]} y={side === 'above' ? m[1] + 22 : side === 'below' ? m[1] - 13 : m[1] + 4} textAnchor={side === 'right' ? 'end' : side === 'left' ? 'start' : 'middle'} fill={d.color}>{d.sub}</text>}
+    {d.name && <text className="sig-name" style={{ fontSize: 11.5 * L }} x={lx} y={ly} textAnchor={side === 'right' ? 'start' : side === 'left' ? 'end' : 'middle'} fill={d.color}>{d.name}{d.value && <tspan className="sig-value" style={{ fontSize: 11 * L }} x={lx} dy={13 * L}>{d.value}</tspan>}</text>}
+    {d.sub && <text className="sig-sub" style={{ fontSize: 11 * L }} x={side === 'right' ? m[0] - 13 : side === 'left' ? m[0] + 13 : m[0]} y={side === 'above' ? m[1] + 22 * L : side === 'below' ? m[1] - 13 * L : m[1] + 4} textAnchor={side === 'right' ? 'end' : side === 'left' ? 'start' : 'middle'} fill={d.color}>{d.sub}</text>}
     {d.pick && <path className="rail-hit" d={toPath(d.points)} onClick={d.pick} onContextMenu={d.menu}/>}
     {d.switchAt && <g className="loop-switch" role="switch" aria-checked={!d.switchOpen} aria-label="Feedback loop switch" tabIndex={0} onClick={e => { e.stopPropagation(); d.onSwitch?.(); }} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') d.onSwitch?.(); }}>
       <title>{d.switchOpen ? 'Loop open: click to close the feedback loop' : 'Loop closed: click to open the feedback loop'}</title>
@@ -318,6 +331,7 @@ function Inspector({ map, selection, pick, result, pinned, scenario, enter, laye
   const hint = (what: string) => <p className="run-hint">Run the simulation to see {what}.</p>;
   const name = (id: string) => id === 'controller' ? 'Controller' : map.agents[id]?.label ?? id;
   const go = (id: string) => pick({ kind: 'agent', id });
+  if (selection.kind === 'ident') return <IdentPanel scenario={scenario} update={update ?? (() => undefined)}/>;
   if (selection.kind === 'tf') return <TransferPanel input={tf.input} output={tf.output} feedback={scenario.feedback} K={[scenario.kp, scenario.ki, scenario.kd]} filtered={scenario.derivative_filter} swap={() => setTf({ input: tf.output, output: tf.input })} clear={() => setTf({})}/>;
   if (selection.kind === 'probe') {
     const p = probeOf(selection.id), info = probeInfo(map, p), color = p.q === 'f' ? COLOR[info.f.kind] : '#6b4fa0';
@@ -430,14 +444,14 @@ function evenPort(l: MapData['layouts'][string], flow: string, [W, H]: Point): {
   return { p, side, ret: vertical ? [p[0], p[1] + 12 * sign] : [p[0] + 12 * sign, p[1]] };
 }
 
-function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string) => void, scenario: Scenario, result: Result | null, at: number, selection: Selection, select: (s: Selection) => void, menu: (s: Selection, e: React.MouseEvent) => void, flip?: () => void, probes?: ProbeState, step?: (k: GainKey, up: boolean) => void) {
+function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string) => void, scenario: Scenario, result: Result | null, at: number, selection: Selection, select: (s: Selection) => void, menu: (s: Selection, e: React.MouseEvent) => void, flip?: () => void, probes?: ProbeState, step?: (k: GainKey, up: boolean) => void, lab = 1) {
   return useMemo(() => {
     if (!map) return { nodes: [] as Node[], edges: [] as Edge[], pinDefault: {} as Record<string, XY> };
     const value = (signal: string) => { const t = result && readTrace(result, signal); return t ? fmt(t[at]) : undefined; };
     const on = (s: Selection) => selection.kind === s.kind && selection.id === s.id;
     const nodes: Node[] = [], edges: Edge[] = [], railStart: Record<string, Point> = {}, pinDefault: Record<string, XY> = {};
     const block = (id: string, r: Rect, data: Partial<BlockData>, z = 1) => nodes.push({ id, type: 'block', position: { x: r.x, y: r.y }, draggable: false, zIndex: z, data: { label: '', tone: '', width: r.w, height: r.h, ...data } });
-    const sig = (id: string, points: Point[], data: Omit<SignalData, 'points'>) => edges.push({ id, source: 'anchor', target: 'anchor', type: 'signal', zIndex: 5, data: { points, ...data, menu: data.target ? (e: React.MouseEvent) => menu(data.target!, e) : undefined } });
+    const sig = (id: string, points: Point[], data: Omit<SignalData, 'points'>) => edges.push({ id, source: 'anchor', target: 'anchor', type: 'signal', zIndex: 5, data: { points, lab, ...data, menu: data.target ? (e: React.MouseEvent) => menu(data.target!, e) : undefined } });
     const card = (id: string) => probes?.show ? (e?: React.MouseEvent) => { if (e) probes.show!({ flow: id, q: 's' }, e); } : undefined;
     const GX = 640, GY = 300;
     const R: Record<string, Rect> = {}, scale: Record<string, number> = {};
@@ -454,6 +468,9 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     };
     let group: Rect = { x: GX, y: GY, w: 250, h: 150 }, cpbRegion: Rect | null = null, finRegion: Rect | null = null;
     const g12 = 340, rowGap = 340, g23 = 340, framePad = 34;
+    // Which disturbances are drawn: a shock whose scale is 0 is not (the bank's inputs are all zero with the bank off).
+    const SCALE_OF: Record<string, keyof Scenario> = { d_income: 'income_scale', d_covid: 'covid_scale', d_crisis: 'crisis_scale', d_mortgages: 'mortgage_scale', d_interest: 'interest_scale' };
+    const active = (d: { id: string; target?: string }) => (d.target !== 'bank' || scenario.bank) && !(SCALE_OF[d.id] && scenario[SCALE_OF[d.id]] === 0);
     if (view.system) {
       // ---- CPB model
       if (view.cpb) {
@@ -509,21 +526,21 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     }
     const gc = group.y + group.h / 2;
     // ---- controller, its ports set the subsidy and error heights
-    const ctrlSize: Point = view.controller ? [CONTROLLER_SIZE[0] * SCALE.controller, CONTROLLER_SIZE[1] * SCALE.controller] : [210, 150];
+    const ctrlSize: Point = view.controller ? [CONTROLLER_SIZE[0] * SCALE.controller, CONTROLLER_SIZE[1] * SCALE.controller] : [210 * lab, 150 * lab];
     const target = view.system ? (view.cpb ? null : R.cpb) : group;
     // Top layer: every block centred on one line through the system; the two subsidies leave symmetric about it.
     const loopOnly = !view.system && !view.controller;
     const u2y = loopOnly ? gc - 24 : target ? target.y + target.h / 2 - .17 * ctrlSize[1] : R.households.y - 140;
     const mainY = loopOnly ? gc : u2y;
     // Open controller: a band of HEAD_FLOW above the circuit for its header, so the header never covers the P box.
-    const ctrlHead = view.controller ? HEAD_FLOW : 0;
-    const ctrl: Rect = { x: group.x - 250 - ctrlSize[0], y: mainY - ctrlSize[1] / 2 - ctrlHead, w: ctrlSize[0], h: ctrlSize[1] + ctrlHead };
+    const ctrlHead = view.controller ? HEAD_FLOW * lab : 0;
+    const ctrl: Rect = { x: group.x - 250 * lab - ctrlSize[0], y: mainY - ctrlSize[1] / 2 - ctrlHead, w: ctrlSize[0], h: ctrlSize[1] + ctrlHead };
     const u1y = loopOnly ? gc + 24 : ctrl.y + ctrlHead + ctrlSize[1] * 5 / 6;
-    const sum: Rect = { x: ctrl.x - (loopOnly ? 150 : 130), y: mainY - 22, w: 44, h: 44 }, parl: Rect = { x: sum.x - (loopOnly ? 350 : 260), y: mainY - 60, w: 180, h: 120 };
-    const sensor: Rect = { x: group.x + group.w + 190, y: gc - 60, w: 180, h: 120 };
+    const sum: Rect = { x: ctrl.x - (loopOnly ? 150 : 130) * lab, y: mainY - 22, w: 44, h: 44 }, parl: Rect = { x: sum.x - (loopOnly ? 170 : 80) * lab - 180 * lab, y: mainY - 60 * lab, w: 180 * lab, h: 120 * lab };
+    const sensor: Rect = { x: group.x + group.w + 190 * lab, y: gc - 60 * lab, w: 180 * lab, h: 120 * lab };
     block('anchor', { x: group.x, y: group.y, w: 1, h: 1 }, { tone: 'anchor' }, 0);
-    block('parliament', parl, { label: 'Parliament', tone: 'reference', selected: on({ kind: 'signal', id: 'y_reference' }) });
-    block('sum', sum, { tone: 'summing' });
+    block('parliament', parl, { label: 'Parliament', tone: scenario.feedback ? 'reference' : 'reference loop-off', selected: on({ kind: 'signal', id: 'y_reference' }) });
+    block('sum', sum, { tone: scenario.feedback ? 'summing' : 'summing loop-off' });
     block('controller', ctrl, view.controller
       ? { label: 'Tax Authority · Controller', tone: 'controller', open: true, tab: 'above', headSpace: ctrlHead, toggle: () => toggle('controller'), children: <ControllerCircuit map={map} scenario={scenario} selection={selection} pick={select} step={step}/> }
       : { label: 'Tax Authority', tone: 'controller', toggle: () => toggle('controller'), selected: on({ kind: 'agent', id: 'controller' }) });
@@ -535,7 +552,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       block('finance', R.finance, view.finance ? { label: scenario.bank ? 'Financial sector' : 'Financial sector · off', tone: scenario.bank ? 'sub-group' : 'sub-group bank-off', open: true, tab: 'tl', toggle: () => toggle('finance') } : { label: scenario.bank ? 'Financial sector' : 'Financial sector · off', tone: scenario.bank ? 'sub-closed' : 'sub-closed bank-off', toggle: () => toggle('finance') }, view.finance ? 1 : 2);
       const agentBlock = (id: string) => {
         const open = view.agents.includes(id), a = map.agents[id];
-        block(id, R[id], open ? { label: a.label, tone: 'agent', open, tab: TAB[id], toggle: () => toggle(id), children: <AgentCircuit map={map} agent={id} scenario={scenario} selection={selection} pick={select} menu={menu}/> }
+        block(id, R[id], open ? { label: a.label, tone: 'agent', open, tab: TAB[id], toggle: () => toggle(id), children: <AgentCircuit map={map} agent={id} scenario={scenario} selection={selection} pick={select} menu={menu} inputs={map.disturbances.filter(d => d.target === id && active(d))} inputSide={id === 'bank' ? 'top' : 'left'}/> }
           : { label: a.label, tone: 'agent', toggle: () => toggle(id), selected: on({ kind: 'agent', id }) }, 3);
       };
       if (view.cpb) CPB_AGENTS.forEach(agentBlock);
@@ -543,32 +560,31 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     }
     // ---- loop signals (two goals when the rental share loop is on)
     const mimo = scenario.feedback && scenario.share_control;
-    sig('r', [[parl.x + parl.w, mainY], [sum.x, mainY]], { color: '#2b6599', letter: 'r', name: mimo ? 'Targets' : 'Housing target', sub: probes?.stepAt === 'y_reference' ? 'Unit step +1 enters here' : mimo ? 'Price & share r' : 'Reference signal r', value: value('I(Reference)'), labelSide: 'above', selected: on({ kind: 'signal', id: 'y_reference' }), pick: card('y_reference') ?? (() => select({ kind: 'signal', id: 'y_reference' })) });
+    sig('r', [[parl.x + parl.w, mainY], [sum.x, mainY]], { color: scenario.feedback ? '#2b6599' : '#b8c2bd', dashed: !scenario.feedback, markDist: (sum.x - parl.x - parl.w) / 2, letter: 'r', name: mimo ? 'Targets' : 'Housing target', sub: probes?.stepAt === 'y_reference' ? 'Unit step +1 enters here' : mimo ? 'Price & share r' : 'Reference signal r', value: value('I(Reference)'), labelSide: 'above', selected: on({ kind: 'signal', id: 'y_reference' }), pick: card('y_reference') ?? (() => select({ kind: 'signal', id: 'y_reference' })) });
     sig('e', [[sum.x + sum.w, mainY], [ctrl.x, mainY]], { color: scenario.feedback ? '#1f2a26' : '#b8c2bd', letter: 'e', name: mimo ? 'Gaps' : 'Gap', sub: mimo ? 'Errors e' : 'Error e', value: scenario.feedback ? value('I(Error)') : undefined, dashed: !scenario.feedback, labelSide: 'above', selected: on({ kind: 'signal', id: 'y_error' }), pick: card('y_error') ?? (() => select({ kind: 'signal', id: 'y_error' })) });
     const subsidy = (id: string) => map.flows.find(f => f.id === id)!;
     ([['owner_subsidy', 'u2', u2y], ['rental_subsidy', 'u1', u1y]] as const).forEach(([id, letter, y], i) => {
+      if (id === 'rental_subsidy' && !scenario.rental_subsidy) return; // switched off: no arrow
       const f = subsidy(id);
       let points: Point[] = [[ctrl.x + ctrl.w, y], [(target ?? group).x, y]];
       if (view.system && view.cpb) { const entry = map.layouts.households.signals.find(s => s.flow === id)!.path[0], x = R.households.x + entry[0] / map.layouts.households.size[0] * R.households.w; points = [[ctrl.x + ctrl.w, y], [x, y], [x, R.households.y]]; }
-      sig(letter, points, { color: COLOR.policy, letter, sub: probes?.stepAt === 'u_open' && id === 'owner_subsidy' ? 'Unit step +1 enters here (loop open)' : undefined, markDist: view.system ? 110 : len(points[0], points[1]) / 2, name: f.label, value: value(f.signal), labelSide: i === 0 ? 'above' : 'below', selected: on({ kind: 'flow', id }) || !!probes?.pins.some(p => p.flow === id), pick: probes?.show ? (e?: React.MouseEvent) => e && probes.show!({ flow: id, q: 's' }, e) : () => select({ kind: 'flow', id }), target: { kind: 'flow', id } });
+      sig(letter, points, { color: COLOR.policy, letter, sub: probes?.stepAt === 'u_open' && id === 'owner_subsidy' ? 'Unit step +1 enters here (loop open)' : undefined, markDist: view.system ? 110 * lab : len(points[0], points[1]) / 2, name: f.label, value: value(f.signal), labelSide: i === 0 ? 'above' : 'below', selected: on({ kind: 'flow', id }) || !!probes?.pins.some(p => p.flow === id), pick: probes?.show ? (e?: React.MouseEvent) => e && probes.show!({ flow: id, q: 's' }, e) : () => select({ kind: 'flow', id }), target: { kind: 'flow', id } });
     });
     // Two measurements go into CBS (supervisor 3.4/5.1). Drawn only: the controller's price is still the construction payments.
-    sig('x1', [[group.x + group.w, gc - 26], [sensor.x, gc - 26]], { color: '#e0782a', letter: 'x₁', name: 'Construction payments', value: value('I(Construction_cost)'), markDist: 95, labelSide: 'above', selected: on({ kind: 'signal', id: 'y_price' }), pick: card('x1') ?? (() => select({ kind: 'signal', id: 'y_price' })), target: { kind: 'signal', id: 'y_price' } });
-    sig('x2', [[group.x + group.w, gc + 26], [sensor.x, gc + 26]], { color: COLOR.real, letter: 'x₂', name: 'New construction', value: value('I(Construction)'), markDist: 95, labelSide: 'below', selected: on({ kind: 'flow', id: 'houses' }), pick: card('x2') ?? (() => select({ kind: 'flow', id: 'houses' })), target: { kind: 'flow', id: 'houses' } });
+    sig('x1', [[group.x + group.w, gc - 26], [sensor.x, gc - 26]], { color: '#e0782a', letter: 'x₁', name: 'Construction payments', value: value('I(Construction_cost)'), markDist: 95 * lab, labelSide: 'above', selected: on({ kind: 'signal', id: 'y_price' }), pick: card('x1') ?? (() => select({ kind: 'signal', id: 'y_price' })), target: { kind: 'signal', id: 'y_price' } });
+    sig('x2', [[group.x + group.w, gc + 26], [sensor.x, gc + 26]], { color: COLOR.real, letter: 'x₂', name: 'New construction', value: value('I(Construction)'), markDist: 95 * lab, labelSide: 'below', selected: on({ kind: 'flow', id: 'houses' }), pick: card('x2') ?? (() => select({ kind: 'flow', id: 'houses' })), target: { kind: 'flow', id: 'houses' } });
     // y always leaves the sensor; the feedback branch is grey and dashed with the loop switch open.
-    sig('yout', [[sensor.x + sensor.w, gc], [sensor.x + sensor.w + 170, gc]], { color: LOOP, letter: 'y', name: mimo ? 'Price index & rental share' : 'House price index', sub: mimo ? 'Outputs y' : 'Output y', value: value('I(Construction_cost)'), markDist: 120, labelSide: 'above', selected: on({ kind: 'signal', id: 'y_price' }), pick: card('y_price') ?? (() => select({ kind: 'signal', id: 'y_price' })), target: { kind: 'signal', id: 'y_price' } });
+    sig('yout', [[sensor.x + sensor.w, gc], [sensor.x + sensor.w + 170 * lab, gc]], { color: LOOP, letter: 'y', name: mimo ? 'Price index & rental share' : 'House price index', sub: mimo ? 'Outputs y' : 'Output y', value: value('I(Construction_cost)'), markDist: 120, labelSide: 'above', selected: on({ kind: 'signal', id: 'y_price' }), pick: card('y_price') ?? (() => select({ kind: 'signal', id: 'y_price' })), target: { kind: 'signal', id: 'y_price' } });
     {
       const fbY = group.y + group.h + 90, tap = sensor.x + sensor.w + 60, fb = scenario.feedback;
       sig('y', [[tap, gc], [tap, fbY], [sum.x + sum.w / 2, fbY], [sum.x + sum.w / 2, sum.y + sum.h]], { color: fb ? LOOP : '#b8c2bd', dashed: !fb, switchAt: [tap - (tap - sum.x - sum.w / 2) / 4, fbY], switchOpen: !fb, onSwitch: flip, letter: 'y', markAt: 2, markDist: (tap - sum.x - sum.w / 2) / 2, name: mimo ? 'Price index & rental share' : 'House price index', sub: mimo ? 'Feedback signals' : 'Feedback signal', labelSide: 'above', pick: card('y_price') ?? (() => select({ kind: 'signal', id: 'y_price' })) });
     }
     // Invisible corners so 'Whole model' also fits the arrows outside the blocks.
     const fbBottom = group.y + group.h + 130;
-    block('edgeL', { x: parl.x - 30, y: mainY, w: 1, h: 1 }, { tone: 'anchor' }, 0); block('edgeR', { x: sensor.x + sensor.w + 230, y: gc, w: 1, h: 1 }, { tone: 'anchor' }, 0);
+    block('edgeL', { x: parl.x - 30 * lab, y: mainY, w: 1, h: 1 }, { tone: 'anchor' }, 0); block('edgeR', { x: sensor.x + sensor.w + 60 + 170 * lab, y: gc, w: 1, h: 1 }, { tone: 'anchor' }, 0);
     block('edgeT', { x: group.x, y: group.y - 270, w: 1, h: 1 }, { tone: 'anchor' }, 0); block('edgeB', { x: group.x, y: fbBottom, w: 1, h: 1 }, { tone: 'anchor' }, 0);
     // ---- disturbances
     // A shock whose scale is 0 is not drawn (the bank's inputs are all zero with the bank off).
-    const SCALE_OF: Record<string, keyof Scenario> = { d_income: 'income_scale', d_covid: 'covid_scale', d_crisis: 'crisis_scale', d_mortgages: 'mortgage_scale', d_interest: 'interest_scale' };
-    const active = (d: { id: string; target?: string }) => (d.target !== 'bank' || scenario.bank) && !(SCALE_OF[d.id] && scenario[SCALE_OF[d.id]] === 0);
     const top = group.y - 250, firmD = map.disturbances.filter(d => d.target === 'firms' && active(d)), bankD = map.disturbances.filter(d => d.target === 'bank' && active(d));
     const nActive = map.disturbances.filter(active).length;
     const place = (d: typeof firmD[number], side: 'left' | 'right', pts: Point[]) => sig(d.id, pts, { color: SHOCK, letter: 'd', name: d.label, sub: probes?.stepAt === d.id ? 'Unit step +1 enters here' : undefined, value: value(d.signal), markAt: 1, labelSide: side, selected: on({ kind: 'signal', id: d.id }) || !!probes?.pins.some(p => p.flow === d.id), pick: probes?.show ? (e?: React.MouseEvent) => e && probes.show!({ flow: d.id, q: 's' }, e) : () => select({ kind: 'signal', id: d.id }), target: { kind: 'signal', id: d.id } });
@@ -607,10 +623,10 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     // After a run, dots move along every connection in the direction of the flow (supervisor 2.5).
     if (result) edges.forEach(e => { (e.data as { animate?: boolean }).animate = true; });
     return { nodes, edges, pinDefault };
-  }, [map, view, scenario, result, at, selection, menu, flip, probes, step]);
+  }, [map, view, scenario, result, at, selection, menu, flip, probes, step, lab]);
 }
 
-function Canvas({ map, view, setView, scenario, result, at, selection, select, focus, menu, flip, probes, step, steps }: { map: MapData; view: View; setView: (v: View) => void; scenario: Scenario; result: Result | null; at: number; selection: Selection; select: (s: Selection) => void; focus: { id: string; n: number }; menu: (s: Selection, e: React.MouseEvent) => void; flip: () => void; probes: ProbeState; step: (k: GainKey, up: boolean) => void; steps?: StepData }) {
+function Canvas({ map, view, setView, scenario, result, at, selection, select, focus, menu, flip, probes, step, steps, lab = 1 }: { lab?: number; map: MapData; view: View; setView: (v: View) => void; scenario: Scenario; result: Result | null; at: number; selection: Selection; select: (s: Selection) => void; focus: { id: string; n: number }; menu: (s: Selection, e: React.MouseEvent) => void; flip: () => void; probes: ProbeState; step: (k: GainKey, up: boolean) => void; steps?: StepData }) {
   const flow = useReactFlow();
   const toggle = (k: string) => {
     if (k === 'system') setView({ system: !view.system, cpb: false, finance: false, controller: view.controller, agents: [] });
@@ -620,7 +636,7 @@ function Canvas({ map, view, setView, scenario, result, at, selection, select, f
     else setView({ ...view, agents: view.agents.includes(k) ? view.agents.filter(a => a !== k) : [...view.agents, k] });
   };
   const withShow = useMemo<ProbeState>(() => ({ ...probes, show: (p, e) => { const at = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY }); probes.place(p, { x: at.x - PIN_W / 2, y: at.y - PIN_H - 14 }); } }), [probes, flow]);
-  const graph = useModelGraph(map, view, toggle, scenario, result, at, selection, select, menu, flip, withShow, step);
+  const graph = useModelGraph(map, view, toggle, scenario, result, at, selection, select, menu, flip, withShow, step, lab);
   const shown = graph.nodes;
   useEffect(() => {
     const id = focus.id;
@@ -635,7 +651,7 @@ function Canvas({ map, view, setView, scenario, result, at, selection, select, f
       else if (n.id === 'controller') { select({ kind: 'agent', id: 'controller' }); if (!view.controller) toggle('controller'); }
       else if (['system', 'cpb', 'finance'].includes(n.id)) { const k = n.id as 'system' | 'cpb' | 'finance'; if (!view[k]) toggle(k); }
       else if (map.agents[n.id]) { select({ kind: 'agent', id: n.id }); if (!view.agents.includes(n.id)) toggle(n.id); }
-    }}><Controls showInteractive={false}/><StickyHeaders nodes={graph.nodes as Node<BlockData>[]}/><PinLayer map={map} probes={withShow} result={result} at={at} fallback={graph.pinDefault} steps={steps}/></ReactFlow>;
+    }}><Controls showInteractive={false}/><StickyHeaders nodes={graph.nodes as Node<BlockData>[]} lab={lab}/><PinLayer map={map} probes={withShow} result={result} at={at} fallback={graph.pinDefault} steps={steps}/></ReactFlow>;
 }
 
 const CLOSED: View = { system: false, cpb: false, finance: false, controller: false, agents: [] };
@@ -652,6 +668,19 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   const [tf, setTf] = useState<TfPicks>({});
   const [menuAt, setMenuAt] = useState<MenuState | null>(null);
   const [dock, setDock] = useState(true);
+  // Label size: block headers, signal names and the closed Parliament / Tax Authority / CBS blocks (for screenshots).
+  const [lab, setLab] = useState(() => { try { const v = Number(localStorage.getItem('hpl.labelSize')); return v >= 1 && v <= 2.5 ? v : 1.3; } catch { return 1.3; } });
+  useEffect(() => { try { localStorage.setItem('hpl.labelSize', String(lab)); } catch { /* storage blocked */ } }, [lab]);
+  const [shooting, setShooting] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const shootCanvas = async () => {
+    // The canvas, plus the side panels when they are open (collapsed handles are left out).
+    const body = bodyRef.current, canvas = canvasRef.current; if (!body || !canvas) return;
+    setShooting(true);
+    try { await savePng(dock || (left && leftOpen) ? body : canvas, 'housing-model-canvas'); }
+    catch (e) { console.error(e); alert('Screenshot failed: ' + (e instanceof Error ? e.message : String(e))); }
+    finally { setShooting(false); }
+  };
   const [pins, setPins] = useState<Probe[]>([]);
   const [sensed, setSensed] = useState<Probe[]>([]);
   const [pinPos, setPinPos] = useState<Record<string, { x: number; y: number }>>({});
@@ -660,23 +689,25 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   const ctx = useMemo<Ctx>(() => ({ K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, feedback: scenario.feedback, settling: design.settling, overshoot: design.overshoot }), [scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.feedback, design.settling, design.overshoot]);
   const latest = useRef({ scenario, update }); latest.current = { scenario, update };
   const tuning = selection.kind === 'agent' && selection.id === 'controller';
+  // System identification: pinned plots show the open-loop step response to u, as while tuning.
+  const ident = selection.kind === 'ident', stepping = tuning || ident;
   const [stepChoice, setStepInput] = useState('y_reference');
   // Loop open: the target does nothing, so the default step is the controller output u.
-  const stepInput = !scenario.feedback && stepChoice === 'y_reference' ? 'u_open' : stepChoice;
+  const stepInput = ident ? 'u_open' : !scenario.feedback && stepChoice === 'y_reference' ? 'u_open' : stepChoice;
   const [steps, setSteps] = useState<StepData>(null);
   useEffect(() => {
-    if (!tuning || !map || !pins.length) { setSteps(null); return; }
+    if (!stepping || !map || !pins.length) { setSteps(null); return; }
     const outs = pins.map(p => probeInfo(map, p).step).filter(Boolean);
     const timer = window.setTimeout(() => {
-      api<NonNullable<StepData>>('/analysis/steps', { input: { kind: 'signal', id: stepInput }, outputs: outs, feedback: scenario.feedback && stepInput !== 'u_open', K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter })
+      api<NonNullable<StepData>>('/analysis/steps', { input: { kind: 'signal', id: stepInput }, outputs: outs, feedback: scenario.feedback && stepInput !== 'u_open', K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, scale: scenario.param_scale ?? {} })
         .then(setSteps).catch(e => setSteps({ input: '', responses: Object.fromEntries(outs.map(o => [`${o!.kind}:${o!.id}`, { error: (e as Error).message }])) }));
     }, 120);
     return () => clearTimeout(timer);
-  }, [tuning, map, pins, stepInput, scenario.feedback, scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter]);
+  }, [stepping, map, pins, stepInput, scenario.feedback, scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.param_scale]);
   const stepGain = useCallback((k: GainKey, up: boolean) => latest.current.update(stepPatch(latest.current.scenario, k, up)), []);
   const same = (a: Probe) => (b: Probe) => a.flow === b.flow && a.q === b.q;
   const toggleIn = (set: React.Dispatch<React.SetStateAction<Probe[]>>) => (p: Probe) => set(old => old.some(same(p)) ? old.filter(x => !same(p)(x)) : [...old, p]);
-  const probeState = useMemo<ProbeState>(() => ({ pins, sensed, unpin: p => setPins(old => old.filter(x => !same(p)(x))), dock: p => { setDock(true); setSelection(p.q === 's' && LOOP_SIGNALS[p.flow] ? LOOP_SIGNALS[p.flow].dock : { kind: 'probe', id: `${p.flow}:${p.q}` }); }, stepAt: tuning ? stepInput : undefined, charts, bodeFrom, setBodeFrom, ctx, removeChart: id => setCharts(old => old.filter(c => c.id !== id)), cbs, lag, cpb, openSensor: () => { setDock(true); setSelection({ kind: 'sensor', id: '' }); },
+  const probeState = useMemo<ProbeState>(() => ({ pins, sensed, unpin: p => setPins(old => old.filter(x => !same(p)(x))), dock: p => { setDock(true); setSelection(p.q === 's' && LOOP_SIGNALS[p.flow] ? LOOP_SIGNALS[p.flow].dock : { kind: 'probe', id: `${p.flow}:${p.q}` }); }, stepAt: stepping ? stepInput : undefined, charts, bodeFrom, setBodeFrom, ctx, removeChart: id => setCharts(old => old.filter(c => c.id !== id)), cbs, lag, cpb, openSensor: () => { setDock(true); setSelection({ kind: 'sensor', id: '' }); },
     addChart: (c, at) => { setCharts(old => old.some(x => x.id === c.id) ? old : [...old, c]); setPinPos(old => ({ ...old, [c.id]: at })); },
     addBode: (from, to, at) => { const id = `bode-${probeKey(from)}-${probeKey(to)}`; setCharts(old => old.some(c => c.id === id) ? old : [...old, { id, kind: 'bode', from, to }]); setPinPos(old => ({ ...old, [id]: at })); setBodeFrom(null); }, pos: pinPos, setPos: (id, q) => setPinPos(old => ({ ...old, [id]: q })), place: (p, at) => { setPins(old => old.some(same(p)) ? old : [...old, p]); setPinPos(old => ({ ...old, [`pin-${p.flow}:${p.q}`]: at })); }, sense: toggleIn(setSensed) }), [pins, sensed, pinPos, tuning, stepInput, charts, bodeFrom, ctx, cbs, lag, cpb]);
   const actions: ProbeActions = { addSens: () => setCharts(old => old.some(c => c.kind === 'sens') ? old.filter(c => c.kind !== 'sens') : [...old, { id: 'sens', kind: 'sens' }]), hasSens: charts.some(c => c.kind === 'sens'), pinned: p => pins.some(same(p)), sensed: p => sensed.some(same(p)), pin: toggleIn(setPins), sense: toggleIn(setSensed), list: sensed, count: pins.length, stepInput, setStepInput };
@@ -707,13 +738,16 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
     <div className="map-head"><div className="row">
       <button className="ghost" onClick={() => setFocus(f => ({ id: '', n: f.n + 1 }))}><Maximize2 size={14}/> Whole model</button>
       <button className="ghost" disabled={!view.system && !view.controller} onClick={() => setView(CLOSED)}><Minus size={14}/> Collapse all</button>
+      <button className={ident ? 'secondary' : 'ghost'} title="Open loop: poles and step response from the subsidy to the house price, and change the model parameters" onClick={() => { if (ident) { setSelection({ kind: 'none', id: '' }); return; } setDock(true); setSelection({ kind: 'ident', id: '' }); setPins(old => old.some(p => p.flow === 'y_price' && p.q === 's') ? old : [...old, { flow: 'y_price', q: 's' }]); }}><Activity size={14}/> Identify system</button>
+      <button className="ghost" data-no-shot title="Save the canvas (and the open side panels) as a high-resolution PNG (3x)" disabled={shooting} onClick={shootCanvas}>{shooting ? <LoaderCircle className="spin" size={14}/> : <Camera size={14}/>} Screenshot canvas</button>
+      <label className="label-size" title="Size of block headers, signal names and the Parliament, Tax Authority and CBS blocks">Label size <output>{lab.toFixed(1)}×</output><input type="range" aria-label="Label size" min={1} max={2.5} step={0.1} value={lab} onChange={e => setLab(Number(e.target.value))}/></label>
     </div>
       <div className="segmented small" role="group" aria-label="Feedback"><button className={!scenario.feedback ? 'active' : ''} aria-pressed={!scenario.feedback} onClick={() => setFeedback(false)}>Open loop</button><button className={scenario.feedback ? 'active' : ''} aria-pressed={scenario.feedback} onClick={() => setFeedback(true)}>Closed loop</button></div>
       {result ? <label className="year-slider">Values in <output>{result.year[at].toFixed(1)}</output><input type="range" aria-label="Year for the values on the map" min={0} max={result.year.length - 1} value={at} onChange={e => setIndex(Number(e.target.value))}/></label> : <button className="primary" disabled={busy} onClick={run}>Run to show values</button>}</div>
-    <div className="map-body" style={{ gridTemplateColumns: `${left ? (leftOpen ? '290px ' : '34px ') : ''}minmax(0,1fr) ${!dock ? '34px' : selection.kind === 'agent' && selection.id === 'controller' ? '460px' : '340px'}` }}>
+    <div className="map-body" ref={bodyRef} style={{ gridTemplateColumns: `${left ? (leftOpen ? '290px ' : '34px ') : ''}minmax(0,1fr) ${!dock ? '34px' : selection.kind === 'ident' ? '520px' : selection.kind === 'agent' && selection.id === 'controller' ? '460px' : '340px'}` }}>
       {left && (leftOpen ? <aside className="inspector left-dock"><button className="dock-toggle" aria-label="Collapse scenario panel" title="Collapse" onClick={() => setLeftOpen(false)}><Minus size={14}/></button>{left}</aside>
-        : <button className="dock-handle" aria-label="Open scenario panel" title="Open scenario panel" onClick={() => setLeftOpen(true)}><ChevronRight size={16}/><span>Scenario</span></button>)}
-      <div className="map-canvas" ref={canvasRef} onClick={() => setMenuAt(null)}><ReactFlowProvider><Canvas map={map} view={view} setView={setView} scenario={scenario} result={result} at={at} selection={selection} select={setSelection} focus={focus} menu={openMenu} flip={() => setFeedback(!scenario.feedback)} probes={probeState} step={stepGain} steps={tuning ? steps : null}/></ReactFlowProvider>
+        : <button className="dock-handle" data-no-shot aria-label="Open scenario panel" title="Open scenario panel" onClick={() => setLeftOpen(true)}><ChevronRight size={16}/><span>Scenario</span></button>)}
+      <div className="map-canvas" ref={canvasRef} style={{ ['--lab' as string]: lab }} onClick={() => setMenuAt(null)}><ReactFlowProvider><Canvas map={map} view={view} setView={setView} scenario={scenario} result={result} at={at} selection={selection} select={setSelection} focus={focus} menu={openMenu} flip={() => setFeedback(!scenario.feedback)} probes={probeState} step={stepGain} steps={stepping ? steps : null} lab={lab}/></ReactFlowProvider>
         {menuAt && <div className="ctx-menu" role="menu" style={{ left: menuAt.x, top: menuAt.y }} onClick={e => e.stopPropagation()}>
           <p>{labelOf(menuAt.target)}</p>
           <button role="menuitem" disabled={menuAt.target.kind === 'element' && !/^(I|V)/.test(menuAt.target.id) || (menuAt.target.kind === 'signal' && !menuAt.target.id.startsWith('d_'))} onClick={() => choose('input')}>Use as input</button>
@@ -724,7 +758,7 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
         <div className="map-key"><span className="k money">Money port pair</span><span className="k real">Goods port pair</span><span className="k shock">d: shock</span><span className="k policy">u: subsidy</span><span className="muted">f: flow, e: incentive. Click + or a block to open it in place. Right-click two flows for a transfer function.</span></div>
       </div>
       {dock ? <aside className="inspector" aria-live="polite"><button className="dock-toggle" aria-label="Collapse panel" title="Collapse panel" onClick={() => setDock(false)}><Minus size={14}/></button><Inspector map={map} selection={selection} pick={setSelection} result={result} pinned={pinned} scenario={scenario} enter={enter} layer="" tf={tf} setTf={setTf} update={update} probes={actions} design={design} setDesign={setDesign}/></aside>
-        : <button className="dock-handle" aria-label="Open panel" title="Open panel" onClick={() => setDock(true)}><ChevronLeft size={16}/><span>Panel</span></button>}
+        : <button className="dock-handle" data-no-shot aria-label="Open panel" title="Open panel" onClick={() => setDock(true)}><ChevronLeft size={16}/><span>Panel</span></button>}
     </div>
   </section>;
 }

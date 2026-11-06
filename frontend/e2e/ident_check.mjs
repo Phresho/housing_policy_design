@@ -1,0 +1,25 @@
+// System identification panel: poles, step response, price card in step mode, parameter design. Usage: node e2e/ident_check.mjs [port] [outdir]
+import { chromium } from 'playwright-core';
+const port = process.argv[2] ?? '8001', out = process.argv[3] ?? 'e2e/shots';
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+const errors = []; page.on('pageerror', e => errors.push(String(e)));
+await page.goto(`http://127.0.0.1:${port}/`); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
+await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).click(); await page.waitForSelector('.year-slider', { timeout: 120000 });
+await page.getByRole('button', { name: 'Collapse scenario panel' }).click();
+await page.getByRole('button', { name: 'Identify system' }).click();
+await page.locator('.ident-line').waitFor({ timeout: 30000 }); await page.waitForTimeout(2500);
+const kpis = await page.locator('.ident-line').innerText(); const elements = await page.locator('.ident-sens tbody tr').allInnerTexts();
+const card = await page.locator('.pin-card').allInnerTexts();
+await page.screenshot({ path: `${out}/ident_1.png` });
+await page.locator('.inspector').last().screenshot({ path: `${out}/ident_panel.png` });
+const box = page.locator('.ident-form input[type=number]').first(); const now = Number(await box.inputValue());
+await box.fill(String((now / 2).toFixed(1)));
+await page.getByRole('button', { name: 'Find parameters' }).click();
+await page.locator('.ident-preview').waitFor({ timeout: 60000 }); await page.waitForTimeout(1200);
+const prev = await page.locator('.ident-preview').innerText();
+await page.waitForTimeout(2500); await page.locator('.inspector').last().screenshot({ path: `${out}/ident_preview.png` }); await page.locator('[aria-label="Poles of the subsidy to price path"]').screenshot({ path: `${out}/ident_path.png` });
+await page.getByRole('button', { name: 'Use in the simulation' }).click(); await page.waitForTimeout(2500);
+const note = await page.locator('.state-note').allInnerTexts();
+console.log(JSON.stringify({ kpis, elements, card, prev, note, errors }, null, 1));
+await browser.close();

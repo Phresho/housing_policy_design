@@ -283,9 +283,9 @@ def resolve(pick: dict, role: str, feedback: bool) -> dict:
     raise ValueError("Pick a flow, a signal or a component.")
 
 
-def _system(i_spec: dict, o_spec: dict, feedback: bool, K, filtered: bool):
+def _system(i_spec: dict, o_spec: dict, feedback: bool, K, filtered: bool, scale: dict | None = None):
     """(E, A, b, c, d) of one input-output pair, with the loop closed when feedback is on."""
-    P = plant()
+    P = scaled_plant(_key(scale))
     E, A, u_idx = L.with_controller(P, tuple(K) if feedback else None, filtered)
     m, n = A.shape[0], P.A.shape[0]
     b, src = np.zeros(m), None
@@ -319,23 +319,23 @@ def _system(i_spec: dict, o_spec: dict, feedback: bool, K, filtered: bool):
     return E, A, b, c, d
 
 
-def steps(inp: dict, outs: list[dict], feedback: bool, K, filtered: bool, years: float = 15) -> dict:
+def steps(inp: dict, outs: list[dict], feedback: bool, K, filtered: bool, years: float = 15, scale: dict | None = None) -> dict:
     """Step responses of several outputs to one input, for the plot cards while tuning."""
     i_spec = resolve(inp, "input", feedback)
     res = {}
     for o in outs:
         key = f"{o['kind']}:{o['id']}"
         try:
-            t, y = L.step(*_system(i_spec, resolve(o, "output", feedback), feedback, K, filtered), years=years)
+            t, y = L.step(*_system(i_spec, resolve(o, "output", feedback), feedback, K, filtered, scale), years=years)
             res[key] = {"t": np.round(t[::4], 3).tolist(), "y": np.round(y[::4], 6).tolist()}
         except (ValueError, KeyError, StopIteration) as error:
             res[key] = {"error": str(error) or "Not available"}
     return {"input": i_spec["label"], "responses": res}
 
 
-def transfer(inp: dict, out: dict, feedback: bool, K, filtered: bool):
+def transfer(inp: dict, out: dict, feedback: bool, K, filtered: bool, scale: dict | None = None):
     i_spec, o_spec = resolve(inp, "input", feedback), resolve(out, "output", feedback)
-    E, A, b, c, d = _system(i_spec, o_spec, feedback, K, filtered)
+    E, A, b, c, d = _system(i_spec, o_spec, feedback, K, filtered, scale)
     H = L.freq(E, A, b, c, d, L.W)
     poles, zeros = L.tf_poles_zeros(E, A, b, c, d)
     t, y = L.step(E, A, b, c, d, years=25)
@@ -401,3 +401,152 @@ def evaluate(K, filtered: bool, settling_yr: float, overshoot_pct: float, min_cy
         "peaks": {"S": float(np.abs(S).max()), "T": float(np.abs(T).max()), "KS": float(np.abs(KS).max())},
         "limits": {"S": float((wp * np.abs(S)).max()), "T": float((wt * np.abs(T)).max()), "KS": float(np.abs(KS).max() / KS_LIMIT)},
     }
+
+
+# ---------------------------------------------------------------- system identification (open loop)
+# Subsidy u -> house price with the loop open, on the linear model (2015 operating point). Model parameters can be
+# changed by factors on R, L, C values ("scale"); the same factors go into the netlist runs (Scenario.param_scale).
+# The operating point and the linearised B4 stay those of the netlist (approximation for changed parameters).
+ADJUST_TOL = 0.05  # "full adjustment": the price transient is below 5% of the long-run change. Claude's convention.
+
+
+def _key(scale: dict | None) -> tuple:
+    return tuple(sorted((k, round(float(v), 6)) for k, v in (scale or {}).items() if v != 1))
+
+
+@lru_cache(maxsize=64)
+def scaled_plant(key: tuple = ()) -> L.Plant:
+    return plant() if not key else L.build_plant(OP_YEAR, scale=dict(key), op=_op())
+
+
+def _open_poles(P: L.Plant) -> np.ndarray:
+    b, c = _loop_vectors(P)
+    p, _ = L.tf_poles_zeros(P.E, P.A, b, c)
+    return p[np.abs(p) > 1e-7]
+
+
+def _modes(P: L.Plant) -> dict:
+    """Step response of the price to the subsidy as final value + sum of modes r_i e^(p_i t) (residues of G(s)/s).
+    adjust: time when the sum of |r_i| e^(Re p_i t) falls below 5% of the final change (an upper bound on the
+    measured 5% settling time, but smooth in the parameters). Dominant pair: the oscillating pair with the largest
+    residue, i.e. the cycle that shows most in the price (not necessarily the slowest pole)."""
+    from scipy import signal
+    from scipy.optimize import brentq
+    g = minimal_g(P)
+    r, p, _ = signal.residue(g["num"], np.polymul(g["den"], [1, 0]))
+    zero = np.abs(p) < 1e-7
+    final = float(np.real(np.sum(r[zero])))
+    modes = [(abs(ri), pi) for ri, pi in zip(r[~zero], p[~zero])]
+    stable = bool(all(pi.real < 0 for _, pi in modes))
+    adjust = None
+    if stable and abs(final) > 1e-12:
+        f = lambda T: sum(a * np.exp(pi.real * T) for a, pi in modes) - ADJUST_TOL * abs(final)
+        adjust = 0.0 if f(0) <= 0 else float(brentq(f, 0, 500))
+    osc = [(a, pi) for a, pi in modes if pi.imag > 1e-6]
+    dom = max(osc, key=lambda m: m[0])[1] if osc else None
+    return {"final": final, "adjust": adjust, "dominant": dom, "stable": stable, "poles": p[~zero], "residues": [a for a, _ in modes]}
+
+
+def _metrics(m: dict) -> dict:
+    d = m["dominant"]
+    return {"adjust_yr": round(m["adjust"], 3) if m["adjust"] is not None else None,
+            "cycle_yr": round(float(2 * np.pi / d.imag), 3) if d is not None else None,
+            "dominant": {"re": round(float(d.real), 4), "im": round(float(d.imag), 4)} if d is not None else None,
+            "stable": m["stable"]}
+
+
+def identify(scale: dict | None = None, years: float = 25.0) -> dict:
+    P = scaled_plant(_key(scale))
+    b, c = _loop_vectors(P)
+    m = _modes(P); p = m["poles"]
+    t, y = L.step(P.E, P.A, b, c, 0.0, years=years)
+    final = float(np.real(L.freq(P.E, P.A, b, c, 0, [1e-4])[0])) if np.all(p.real < 0) else None
+    k_pk = int(np.argmax(y)); after = y[k_pk:]
+    k_tr = k_pk + int(np.argmin(after)) if len(after) > 1 else k_pk
+    # time after which the response stays within 5% of its final value (measured, not from the poles)
+    settle = None
+    if final:
+        out = np.where(np.abs(y - final) > ADJUST_TOL * abs(final))[0]
+        settle = round(float(t[out[-1] + 1]), 2) if len(out) and out[-1] + 1 < len(t) else (0.0 if not len(out) else None)
+    return {
+        "poles": [{**L.pole_info(q), "weight": round(float(w), 5)} for q, w in sorted(zip(p, m["residues"]), key=lambda v: -v[0].real)],
+        "metrics": _metrics(m), "final": round(final, 5) if final is not None else None,
+        "step_years": np.round(t[::5], 3).tolist(), "step": np.round(y[::5], 6).tolist(),
+        "peak": {"t": round(float(t[k_pk]), 2), "y": round(float(y[k_pk]), 5)},
+        "trough": {"t": round(float(t[k_tr]), 2), "y": round(float(y[k_tr]), 5)} if k_tr > k_pk else None,
+        "settle_5pct_yr": settle, "scale": dict(_key(scale)),
+    }
+
+
+@lru_cache(maxsize=1)
+def _element_info() -> dict:
+    from .topology import model_map
+    names = RLC(plant())
+    return {e["name"]: {"agent": e.get("agent"), "value": e.get("value"), "role": e.get("role")} for e in model_map()["elements"] if e["name"] in names}
+
+
+def sensitivity(scale: dict | None = None) -> list[dict]:
+    """How much +10% on each R, L, C moves the slowest decay rate and the slowest cycle."""
+    base = dict(scale or {}); m0 = _metrics(_modes(scaled_plant(_key(base))))
+    rows = []
+    for name in RLC(plant()):
+        trial = dict(base); trial[name] = trial.get(name, 1.0) * 1.1
+        m = _metrics(_modes(L.build_plant(OP_YEAR, scale=trial, op=_op())))
+        d_adj = (m["adjust_yr"] or 0) - (m0["adjust_yr"] or 0)
+        d_cyc = (m["cycle_yr"] or 0) - (m0["cycle_yr"] or 0)
+        rows.append({"name": name, **_element_info().get(name, {}), "d_adjust_yr": round(d_adj, 4), "d_cycle_yr": round(d_cyc, 4)})
+    # ranked by the effect on the adjustment time, then on the cycle
+    return sorted(rows, key=lambda r: -(abs(r["d_adjust_yr"]) + 0.5 * abs(r["d_cycle_yr"])))
+
+
+def design_params(adjust_yr: float, cycle_yr: float | None, elements: list[str], scale: dict | None = None,
+                  lo: float = 0.2, hi: float = 5.0, weight: float = 0.02) -> dict:
+    """Factors on the chosen elements so the slowest mode adjusts in adjust_yr (and the slowest pair cycles in cycle_yr).
+    Least squares in log terms, with a small penalty on large changes (weight). Bounds lo..hi per factor."""
+    from scipy.optimize import least_squares
+    base = dict(scale or {})
+    names = [n for n in elements if n in set(RLC(plant()))]
+    if not names:
+        raise ValueError("choose at least one R, L or C element")
+
+    def trial(x):
+        sc = dict(base)
+        for n, v in zip(names, x):
+            sc[n] = base.get(n, 1.0) * float(np.exp(v))
+        return sc
+
+    def res(x):
+        try:
+            m = _modes(L.build_plant(OP_YEAR, scale=trial(x), op=_op()))
+        except Exception:
+            m = {"stable": False}
+        if not m["stable"] or not m.get("adjust"):
+            r = [5.0, 5.0 if cycle_yr else 0.0]
+        else:  # unrounded, so the finite-difference gradient survives
+            cyc = 2 * np.pi / m["dominant"].imag if m["dominant"] is not None else None
+            r = [np.log(m["adjust"] / adjust_yr), np.log(cyc / cycle_yr) if cycle_yr and cyc else 0.0]
+        return np.r_[r, np.sqrt(weight) * np.asarray(x)]
+
+    b_lo = [np.log(lo / base.get(n, 1.0)) for n in names]; b_hi = [np.log(hi / base.get(n, 1.0)) for n in names]
+    x0 = np.clip(np.zeros(len(names)), np.array(b_lo) + 1e-9, np.array(b_hi) - 1e-9)
+    sol = least_squares(res, x0, bounds=(b_lo, b_hi), diff_step=1e-2, max_nfev=300)
+    sc = {k: round(v, 4) for k, v in trial(sol.x).items() if abs(v - 1) > 1e-4}
+    out = identify(sc)
+    out["design"] = {"target_adjust_yr": adjust_yr, "target_cycle_yr": cycle_yr, "elements": names,
+                     "changed": {n: sc.get(n, 1.0) for n in names}, "bounds": [lo, hi]}
+    return out
+
+
+def pole_path(a: dict | None, b: dict | None, n: int = 24) -> list[dict]:
+    """Open-loop poles (subsidy -> price) while the parameters move from set a to set b, geometrically
+    (factor a^(1-l) b^l per element, l = 0..1), so the plot can show where each pole travels."""
+    a, b = dict(a or {}), dict(b or {})
+    names = sorted(set(a) | set(b))
+    out = []
+    for lam in np.linspace(0, 1, n + 1):
+        sc = {k: float(a.get(k, 1.0) ** (1 - lam) * b.get(k, 1.0) ** lam) for k in names}
+        m = _modes(L.build_plant(OP_YEAR, scale=sc, op=_op()) if names else plant())
+        d = m["dominant"]
+        out.append({"lam": round(float(lam), 3), "poles": [[round(float(q.real), 4), round(float(q.imag), 4)] for q in m["poles"]],
+                    "dominant": [round(float(d.real), 4), round(float(d.imag), 4)] if d is not None else None})
+    return out

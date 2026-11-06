@@ -1,6 +1,7 @@
 export type ControllerKey = 'hinf' | 'zn' | 'netlist' | 'custom';
 export interface Scenario {
   name: string; feedback: boolean; controller: ControllerKey; kp: number; ki: number; kd: number; derivative_filter: boolean;
+  param_scale: Record<string, number>;  // model parameters changed in system identification: {R/L/C name: factor}
   target_growth_pct: number; reference_base: number; subsidy_scale: number; interest_scale: number; income_scale: number;
   mortgage_scale: number; crisis_scale: number; covid_scale: number;
   share_control: boolean; skp: number; ski: number; skd: number; share_target_pct: number; income_path: 'historical' | 'stable'; mortgage_shift_yr: number; interest_shift_yr: number; interest_new_share: number; covid_on_yr: number; covid_fall_yr: number; rental_subsidy: boolean; crisis_start_yr: number; crisis_w: boolean; equilibrium_start: boolean; crisis_w_start_yr: number; crisis_w_scale: number; crisis_w_on_yr: number; inflation_pct: number; income_growth_pct: number; bank: boolean;
@@ -16,4 +17,4 @@ export interface Element { name: string; a: string; b: string; value: string; st
 export interface Layout { size: [number, number]; wires: number[][]; return_wires: number[][]; common_returns: number[][]; dots: number[][]; grounds: number[][]; signals: { flow: string; path: number[][] }[]; ports: Record<string, number[]>; returns: Record<string, number[]>; not_drawn: string[] }
 export interface ControllerLayout { size: [number, number]; paths: number[][][]; sums: number[][]; labels: [number, number, string][]; not_drawn: string[] }
 export interface MapData { agents: Record<string, { label: string; summary: string; description: string }>; controller: { label: string; description: string }; flows: Flow[]; disturbances: Signal[]; outputs: Signal[]; elements: Element[]; layouts: Record<string, Layout>; controller_layout: ControllerLayout }
-export type Selection = { kind: 'flow' | 'signal' | 'element' | 'agent' | 'sensor' | 'shocks' | 'tf' | 'probe' | 'none'; id: string };
+export type Selection = { kind: 'flow' | 'signal' | 'element' | 'agent' | 'sensor' | 'shocks' | 'tf' | 'probe' | 'ident' | 'none'; id: string };

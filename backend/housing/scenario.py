@@ -31,6 +31,8 @@ class Scenario(BaseModel):
     ki: float = Field(0.666, ge=0.01, le=20)
     kd: float = Field(2.839, ge=0, le=50)
     derivative_filter: bool = True
+    # Model parameters changed in the system-identification panel: {element: factor} on R, L, C values (empty: the netlist).
+    param_scale: dict[str, float] = Field(default_factory=dict, max_length=60)
     # Start in equilibrium with the controller in charge (thesis EQUILIBRIUM_INIT_HANDOFF.md): price on the reference,
     # subsidy at the level that holds it there, integrator pre-charged. False: the netlist's 5-s soft start.
     equilibrium_start: bool = True
@@ -73,6 +75,13 @@ class Scenario(BaseModel):
     covid_scale: float = Field(1.0, ge=0, le=2)
     covid_on_yr: float = Field(2.5, ge=0.1, le=5)     # Covid shock fully on (netlist 15 s = 2.5 yr)
     covid_fall_yr: float = Field(50 / 6, ge=0.1, le=10)  # and its fade-out (netlist 50 s = 8.3 yr)
+
+    @model_validator(mode="after")
+    def _check_param_scale(self):
+        for name, f in self.param_scale.items():
+            if name[:1] not in "RLC" or not (0.05 <= f <= 20):
+                raise ValueError(f"param_scale: {name} x{f} (R, L or C, factor 0.05-20)")
+        return self
 
     @model_validator(mode="after")
     def _apply_preset(self):
@@ -171,6 +180,8 @@ def build(s: Scenario, b4: Literal["linear", "nonlinear", "original"] = "linear"
         nl.set_pulse_amplitude(lines, "V§Shock_financialcrisis ", "PULSE(00 -50", s.crisis_scale)
     nl.set_covid_timing(lines, round(s.covid_on_yr * SECONDS_PER_YEAR, 6), round(s.covid_fall_yr * SECONDS_PER_YEAR, 6))
     nl.set_pulse_amplitude(lines, "V§Shock_covid ", "PULSE(00 80", s.covid_scale)
+    if s.param_scale:
+        nl.scale_elements(lines, s.param_scale)
     return lines
 
 
