@@ -717,7 +717,7 @@ const TOUR_CARD = { w: 700, h: 400 };  // plot cards in the guided tour, model u
 const CLOSED: View = { system: false, cpb: false, finance: false, controller: false, agents: [] };
 type TfPicks = { input?: Pick; output?: Pick };
 type MenuState = { x: number; y: number; target: Selection; label: string };
-export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, update, design, setDesign, cbs, lag, left, cpb, tour }: { tour?: { n: number; pins: Probe[] }; scenario: Scenario; result: Result | null; pinned: Result | null; busy: boolean; run: () => void; setFeedback: (on: boolean) => void; update: (patch: Partial<Scenario>) => void; design: Design; setDesign: (d: Design) => void; cbs?: CbsData; lag: number; left?: React.ReactNode; cpb?: { year: number[]; yoy: number[] } }) {
+export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, update, design, setDesign, cbs, lag, left, cpb, tour }: { tour?: { n: number; pins: Probe[]; ident?: boolean }; scenario: Scenario; result: Result | null; pinned: Result | null; busy: boolean; run: () => void; setFeedback: (on: boolean) => void; update: (patch: Partial<Scenario>) => void; design: Design; setDesign: (d: Design) => void; cbs?: CbsData; lag: number; left?: React.ReactNode; cpb?: { year: number[]; yoy: number[] } }) {
   const [leftOpen, setLeftOpen] = useState(true);
   const [map, setMap] = useState<MapData>();
   const [error, setError] = useState('');
@@ -748,14 +748,15 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   // Tour step: closed blocks, the whole model in view, and only this step's plot cards (they play with the new run).
   useEffect(() => {
     if (!tour) return;
-    setViewState(CLOSED); setSelection(NONE); setCharts([]); setSensed([]); setPinPos({}); setPins(tour.pins); setFocus(f => ({ id: '', n: f.n + 1 }));
+    setViewState(CLOSED); setSelection(tour.ident ? { kind: 'ident', id: '' } : NONE); if (tour.ident) setDock(true); setCharts([]); setSensed([]); setPinPos({}); setPins(tour.pins); setFocus(f => ({ id: '', n: f.n + 1 }));
   }, [tour?.n]);
   const [bodeFrom, setBodeFrom] = useState<Probe | null>(null);
   const ctx = useMemo<Ctx>(() => ({ K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, feedback: scenario.feedback, settling: design.settling, overshoot: design.overshoot }), [scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.feedback, design.settling, design.overshoot]);
   const latest = useRef({ scenario, update }); latest.current = { scenario, update };
   const tuning = selection.kind === 'agent' && selection.id === 'controller';
   // System identification: pinned plots show the open-loop step response to u, as while tuning.
-  const ident = selection.kind === 'ident', stepping = tuning || ident;
+  // In the tour the identification dock sits next to time plots, so the cards stay time plots there.
+  const ident = selection.kind === 'ident', stepping = tuning || (ident && !tour);
   const [stepChoice, setStepInput] = useState('y_reference');
   // Loop open: the target does nothing, so the default step is the controller output u.
   const stepInput = ident ? 'u_open' : !scenario.feedback && stepChoice === 'y_reference' ? 'u_open' : stepChoice;
@@ -764,11 +765,11 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
     if (!stepping || !map || !pins.length) { setSteps(null); return; }
     const outs = pins.map(p => probeInfo(map, p).step).filter(Boolean);
     const timer = window.setTimeout(() => {
-      api<NonNullable<StepData>>('/analysis/steps', { input: { kind: 'signal', id: stepInput }, outputs: outs, feedback: scenario.feedback && stepInput !== 'u_open', K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, scale: scenario.param_scale ?? {} })
+      api<NonNullable<StepData>>('/analysis/steps', { input: { kind: 'signal', id: stepInput }, outputs: outs, feedback: scenario.feedback && stepInput !== 'u_open', K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, scale: { ...(scenario.param_scale ?? {}), ...(scenario.bank ? {} : { NO_BANK: 0 }) } })
         .then(setSteps).catch(e => setSteps({ input: '', responses: Object.fromEntries(outs.map(o => [`${o!.kind}:${o!.id}`, { error: (e as Error).message }])) }));
     }, 120);
     return () => clearTimeout(timer);
-  }, [stepping, map, pins, stepInput, scenario.feedback, scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.param_scale]);
+  }, [stepping, map, pins, stepInput, scenario.feedback, scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.param_scale, scenario.bank]);
   const stepGain = useCallback((k: GainKey, up: boolean) => latest.current.update(stepPatch(latest.current.scenario, k, up)), []);
   const same = (a: Probe) => (b: Probe) => a.flow === b.flow && a.q === b.q;
   const toggleIn = (set: React.Dispatch<React.SetStateAction<Probe[]>>) => (p: Probe) => set(old => old.some(same(p)) ? old.filter(x => !same(p)(x)) : [...old, p]);

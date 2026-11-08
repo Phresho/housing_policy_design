@@ -80,6 +80,8 @@ class Pick(BaseModel):
 
 def _check_scale(scale: dict[str, float]) -> dict[str, float]:
     for name, f in scale.items():
+        if name == "NO_BANK":
+            continue  # the original CPB model without the bank (analysis.NO_BANK)
         if name[:1] not in "RLC" or not (0.05 <= f <= 20):
             raise HTTPException(422, f"Model parameter {name} x{f}: only R, L, C values, factor 0.05-20.")
     return scale

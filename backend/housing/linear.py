@@ -75,33 +75,40 @@ class Plant:
         return c
 
 
-def _operating_point(year: float) -> dict[str, float]:
+def _operating_point(year: float, bank: bool = True) -> dict[str, float]:
     from .scenario import Scenario, run, YEAR_AT_RAW_ZERO, SECONDS_PER_YEAR
-    traces = _baseline_traces()
+    traces = _baseline_traces(bank)
     t = (year - YEAR_AT_RAW_ZERO) * SECONDS_PER_YEAR
     names = ["I(Rent)", "I(Demand_rent)", "I(Imputed_rent)", "I(Demand_owner_occupied)", "I(Construction_cost)", "I(Mortgage_debt)", "I(Interest_rates)"]
     lower = {k.lower(): k for k in traces}
     return {n: float(np.interp(t, traces["time"], traces[lower[n.lower()]])) for n in names}
 
 
-@lru_cache(maxsize=1)
-def _baseline_traces():
+@lru_cache(maxsize=2)
+def _baseline_traces(bank: bool = True):
     from . import engine
     from .scenario import Scenario, build
-    return engine.simulate(build(Scenario(feedback=False)))
+    return engine.simulate(build(Scenario(feedback=False, bank=bank)))
 
 
-def build_plant(op_year: float = 2015.0, scale: dict[str, float] | None = None, op: dict[str, float] | None = None) -> Plant:
+# Without the bank (the original CPB model, netlist.set_no_bank) the savings source V4 becomes a 0 A source: the
+# savings pair is open. The other bank-side sources are inputs or already constants here (B2, B5), and the mortgage
+# debt is driven by inputs only, so V4 is the one element that changes the dynamics from subsidy to price.
+NO_BANK_SKIP = frozenset({"V4"})
+
+
+def build_plant(op_year: float = 2015.0, scale: dict[str, float] | None = None, op: dict[str, float] | None = None, bank: bool = True) -> Plant:
     """Small-signal descriptor of the open-loop netlist. scale multiplies R, L, C values by name
     (used for the parameter-uncertainty Monte Carlo)."""
-    op = op or _operating_point(op_year)
+    op = op or _operating_point(op_year, bank)
     scale = scale or {}
+    skip = SKIP if bank else SKIP | NO_BANK_SKIP
     els = {}
     for e in model_map()["elements"]:
         e = dict(e)
         if e["name"] == SUBSIDY:
             e["a"], e["b"], e["state"] = "0", "N031", "active"
-        if e["a"] == e["b"] or e["name"] in SKIP or e["state"] not in ("active", "signal") or "NC_" in e["a"] + e["b"]:
+        if e["a"] == e["b"] or e["name"] in skip or e["state"] not in ("active", "signal") or "NC_" in e["a"] + e["b"]:
             continue
         els[e["name"]] = e
     nodes = sorted({n for e in els.values() for n in (e["a"], e["b"])} - {"0"})

@@ -410,13 +410,26 @@ def evaluate(K, filtered: bool, settling_yr: float, overshoot_pct: float, min_cy
 ADJUST_TOL = 0.05  # "full adjustment": the price transient is below 5% of the long-run change. Claude's convention.
 
 
+# "NO_BANK" in a scale dict (any value) means the original CPB model without the bank (Scenario.bank = False).
+NO_BANK = "NO_BANK"
+
+
 def _key(scale: dict | None) -> tuple:
-    return tuple(sorted((k, round(float(v), 6)) for k, v in (scale or {}).items() if v != 1))
+    return tuple(sorted((k, round(float(v), 6)) for k, v in (scale or {}).items() if v != 1 or k == NO_BANK))
+
+
+def _build(scale: dict) -> L.Plant:
+    """Plant with the R, L, C factors in scale; without the bank when scale holds NO_BANK (not cached)."""
+    bank = NO_BANK not in scale
+    factors = {k: v for k, v in scale.items() if k != NO_BANK}
+    return L.build_plant(OP_YEAR, scale=factors, op=_op() if bank else L._operating_point(OP_YEAR, bank=False), bank=bank)
 
 
 @lru_cache(maxsize=64)
 def scaled_plant(key: tuple = ()) -> L.Plant:
-    return plant() if not key else L.build_plant(OP_YEAR, scale=dict(key), op=_op())
+    if not key:
+        return plant()
+    return _build(dict(key))
 
 
 def _open_poles(P: L.Plant) -> np.ndarray:
@@ -474,7 +487,7 @@ def identify(scale: dict | None = None, years: float = 25.0) -> dict:
         "step_years": np.round(t[::5], 3).tolist(), "step": np.round(y[::5], 6).tolist(),
         "peak": {"t": round(float(t[k_pk]), 2), "y": round(float(y[k_pk]), 5)},
         "trough": {"t": round(float(t[k_tr]), 2), "y": round(float(y[k_tr]), 5)} if k_tr > k_pk else None,
-        "settle_5pct_yr": settle, "scale": dict(_key(scale)),
+        "settle_5pct_yr": settle, "scale": {k: v for k, v in _key(scale) if k != NO_BANK}, "bank": NO_BANK not in (scale or {}),
     }
 
 
@@ -491,7 +504,7 @@ def sensitivity(scale: dict | None = None) -> list[dict]:
     rows = []
     for name in RLC(plant()):
         trial = dict(base); trial[name] = trial.get(name, 1.0) * 1.1
-        m = _metrics(_modes(L.build_plant(OP_YEAR, scale=trial, op=_op())))
+        m = _metrics(_modes(_build(trial)))
         d_adj = (m["adjust_yr"] or 0) - (m0["adjust_yr"] or 0)
         d_cyc = (m["cycle_yr"] or 0) - (m0["cycle_yr"] or 0)
         rows.append({"name": name, **_element_info().get(name, {}), "d_adjust_yr": round(d_adj, 4), "d_cycle_yr": round(d_cyc, 4)})
@@ -517,7 +530,7 @@ def design_params(adjust_yr: float, cycle_yr: float | None, elements: list[str],
 
     def res(x):
         try:
-            m = _modes(L.build_plant(OP_YEAR, scale=trial(x), op=_op()))
+            m = _modes(_build(trial(x)))
         except Exception:
             m = {"stable": False}
         if not m["stable"] or not m.get("adjust"):
@@ -545,7 +558,7 @@ def pole_path(a: dict | None, b: dict | None, n: int = 24) -> list[dict]:
     out = []
     for lam in np.linspace(0, 1, n + 1):
         sc = {k: float(a.get(k, 1.0) ** (1 - lam) * b.get(k, 1.0) ** lam) for k in names}
-        m = _modes(L.build_plant(OP_YEAR, scale=sc, op=_op()) if names else plant())
+        m = _modes(_build(sc) if names else plant())
         d = m["dominant"]
         out.append({"lam": round(float(lam), 3), "poles": [[round(float(q.real), 4), round(float(q.imag), 4)] for q in m["poles"]],
                     "dominant": [round(float(d.real), 4), round(float(d.imag), 4)] if d is not None else None})

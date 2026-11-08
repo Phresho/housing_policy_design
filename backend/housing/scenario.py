@@ -157,7 +157,8 @@ def equilibrium_subsidy(s: Scenario) -> dict:
 
 def subsidy_points(s: Scenario) -> list[tuple[float, float]]:
     """PWL points (circuit time, value) of the open-loop subsidy for subsidy_path 'step' or 'staircase'."""
-    t = lambda year: max(0.0, (year - YEAR_AT_RAW_ZERO) * SECONDS_PER_YEAR)
+    # circuit time of a calendar year as the plots show it (their year axis starts at the .tran start, TRAN_START)
+    t = lambda year: max(0.0, (year - YEAR_AT_RAW_ZERO) * SECONDS_PER_YEAR + TRAN_START)
     edge, end = 0.01 * SECONDS_PER_YEAR, 400.0
     if s.subsidy_path == "step":
         a, b = s.subsidy_base, s.subsidy_base + s.subsidy_step

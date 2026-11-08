@@ -149,7 +149,9 @@ function StepView({ id, nominal, preview }: { id: Ident; nominal?: Ident; previe
 }
 
 export function IdentPanel({ scenario, update }: { scenario: Scenario; update: (p: Partial<Scenario>) => void }) {
-  const applied = scenario.param_scale ?? {}, changed = Object.keys(applied).length > 0;
+  // Bank off (original CPB model): the linear model leaves the bank out too (NO_BANK marker, analysis.NO_BANK).
+  const own = scenario.param_scale ?? {}, nb: Record<string, number> = scenario.bank ? {} : { NO_BANK: 0 };
+  const applied = { ...own, ...nb }, changed = Object.keys(own).length > 0;
   const [id, setId] = useState<Ident>(); const [nominal, setNominal] = useState<Ident>(); const [error, setError] = useState('');
   const [sens, setSens] = useState<SensRow[]>([]); const [chosen, setChosen] = useState<string[] | null>(null);
   const [adjust, setAdjust] = useState<number | null>(null); const [useCycle, setUseCycle] = useState(false); const [cycle, setCycle] = useState<number | null>(null);
@@ -158,7 +160,7 @@ export function IdentPanel({ scenario, update }: { scenario: Scenario; update: (
   // path from the current model to the proposal, or (no proposal) from the netlist values to the applied ones
   const pathKey = JSON.stringify([applied, preview?.scale ?? null]);
   useEffect(() => {
-    const end = preview?.scale ?? (changed ? applied : null), start = preview ? applied : {};
+    const end = preview ? { ...preview.scale, ...nb } : changed ? applied : null, start = preview ? applied : nb;
     if (!end) { setPath(undefined); return; }
     let live = true;
     api<{ path: PathStep[] }>('/analysis/pole_path', { start, end }).then(r => { if (live) setPath(r.path); }).catch(() => undefined);
@@ -168,7 +170,7 @@ export function IdentPanel({ scenario, update }: { scenario: Scenario; update: (
   useEffect(() => {
     setError(''); setPreview(undefined);
     api<Ident>('/analysis/identify', { scale: applied }).then(r => { setId(r); setAdjust(a => a ?? (r.metrics.adjust_yr !== null ? +r.metrics.adjust_yr.toFixed(1) : null)); setCycle(c => c ?? (r.metrics.cycle_yr !== null ? +r.metrics.cycle_yr.toFixed(1) : null)); }).catch(e => setError((e as Error).message));
-    if (changed) api<Ident>('/analysis/identify', { scale: {} }).then(setNominal).catch(() => undefined); else setNominal(undefined);
+    if (changed) api<Ident>('/analysis/identify', { scale: nb }).then(setNominal).catch(() => undefined); else setNominal(undefined);
     api<{ rows: SensRow[] }>('/analysis/sensitivity', { scale: applied }).then(r => { setSens(r.rows); setChosen(c => c ?? r.rows.slice(0, 6).map(x => x.name)); }).catch(() => undefined);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   const find = async () => {
@@ -186,7 +188,7 @@ export function IdentPanel({ scenario, update }: { scenario: Scenario; update: (
     {error && <p className="state-note">{error}</p>}
     {!id && !error && <p className="muted"><LoaderCircle className="spin" size={14}/> Computing…</p>}
     {id && m && <>
-      <h4 className="ident-first">Poles · subsidy → house price, loop open</h4><PoleMap id={id} nominal={preview ? undefined : nominal} preview={preview} path={path}/>
+      <h4 className="ident-first">Poles · subsidy → house price, loop open{scenario.bank ? '' : ' · no bank (CPB model)'}</h4><PoleMap id={id} nominal={preview ? undefined : nominal} preview={preview} path={path}/>
       <h4>Step response · +1 in the subsidy</h4><StepView id={id} nominal={nominal} preview={preview}/>
       <p className="ident-line">Long-run <b>{fmt(id.final, 3)}</b> · peak <b>{fmt(id.peak.y, 3)}</b> after {fmt(id.peak.t, 1)} yr · full adjustment <b>{fmt(m.adjust_yr, 1)} yr</b> · cycle <b>{fmt(m.cycle_yr, 1)} yr</b></p>
       <hr/>
