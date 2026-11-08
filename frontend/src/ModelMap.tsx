@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { BaseEdge, Controls, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow, useStore, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Activity, Camera, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, LoaderCircle, Maximize2, Minus, Pause, Play, Plus } from 'lucide-react';
@@ -94,8 +94,16 @@ type BlockData = { label: string; sub?: string; tone: string; width: number; hei
 //   year-on-year (%)   = (x1(t) - x1(t - 1 yr)) / x1(t - 1 yr) x 100   (B§Year_on_year_change1, delay 6 s = 1 year);
 //   x2 (new construction) is recorded but does not enter the index.
 // Drawn in its own units (1000 x 520); x1 enters at y 218, x2 at 342, the index leaves at 280 (where the canvas wires are).
+// The year marker (Play, slider) reaches the drawing through this context, so the graph's nodes and edges are not
+// rebuilt every frame: React Flow then keeps its measured blocks (rebuilding them each frame hid blocks and arrows).
+const AtContext = createContext<{ result: Result | null; at: number }>({ result: null, at: 0 });
+function Val({ signal }: { signal: string }) {
+  const { result, at } = useContext(AtContext); const t = result && readTrace(result, signal);
+  return <>{t ? fmt(t[Math.min(at, t.length - 1)]) : ''}</>;
+}
 const CBS_SIZE: Point = [1000, 520], CBS_Y = { x1: 218, x2: 342, out: 280 };
-function CbsCircuit({ result, at }: { result: Result | null; at: number }) {
+function CbsCircuit() {
+  const { result, at } = useContext(AtContext);
   const x1 = result ? readTrace(result, 'I(Construction_cost)') : undefined, x2 = result ? readTrace(result, 'I(Construction)') : undefined;
   const yr = result ? Math.round(1 / (result.year[1] - result.year[0])) : 10, back = at - yr;
   const v = (t: number[] | undefined, i: number) => t && i >= 0 ? fmt(t[i]) : '–';
@@ -251,7 +259,13 @@ function PinLayer({ map, probes, result, at, fallback, steps }: { map: MapData; 
         <button aria-label="Send to the dock" title="Send to the dock" onClick={() => probes.dock(p)}>⇥</button>
         </PinTools><button className="pin-close" aria-label="Remove from the canvas" title="Remove from the canvas" onClick={() => probes.unpin(p)}>×</button></div>
       {steps ? st?.y ? <><MiniPlot y={st.y} color={color} w={pw} h={ph} k={f}/><small>Step response to {steps.input} +1 · after {st.t![st.t!.length - 1].toFixed(0)} yr: <b>{fmt(st.y[st.y.length - 1])}</b></small></> : <small className="muted">{st?.error ?? 'Computing…'}</small>
-        : y ? <><MiniPlot y={y} at={at} color={color} w={pw} h={ph} k={f} label={result!.year[at].toFixed(1)} ghost={probes.ghost && info.signal ? readTrace(probes.ghost, info.signal) : undefined}/><small>{result!.year[at].toFixed(1)}: <b>{fmt(y[at])}</b>{probes.ghost && info.signal && readTrace(probes.ghost, info.signal) ? <span className="ghost-note"> · blue dashed: proposed parameters {fmt(readTrace(probes.ghost, info.signal)![at])} (new parameters also move the level)</span> : null}</small></> : <small className="muted">Run the simulation to see this signal.</small>}</div>;
+        : y ? (() => {
+          // Proposed parameters (identification): new R, L, C values also move the level, so the proposed run is
+          // shifted to start where the current run starts; then only the dynamics differ.
+          const g0 = probes.ghost && info.signal ? readTrace(probes.ghost, info.signal) : undefined;
+          const g = g0 && g0.length === y.length ? g0.map(v => v - g0[0] + y[0]) : undefined;
+          return <><MiniPlot y={y} at={at} color={color} w={pw} h={ph} k={f} label={result!.year[at].toFixed(1)} ghost={g}/><small>{result!.year[at].toFixed(1)}: <b>{fmt(y[at])}</b>{g ? <span className="ghost-note"> · proposed (blue, same start): {fmt(g[at])}</span> : null}</small></>;
+        })() : <small className="muted">Run the simulation to see this signal.</small>}</div>;
   })}</div>;
 }
 const nodeTypes = { block: Block };
@@ -277,7 +291,7 @@ function StickyHeaders({ nodes, lab = 1 }: { nodes: Node<BlockData>[]; lab?: num
 }
 
 // ---------- edges
-type RailData = { points: Point[]; color: string; name: string; value?: string; selected?: boolean; labelT: number; side: number; pick: (e?: React.MouseEvent) => void; menu?: (e: React.MouseEvent) => void; probe?: (q: 'e' | 'f', e: React.MouseEvent) => void; probed?: ('e' | 'f')[]; animate?: boolean };
+type RailData = { points: Point[]; color: string; name: string; value?: React.ReactNode; selected?: boolean; labelT: number; side: number; pick: (e?: React.MouseEvent) => void; menu?: (e: React.MouseEvent) => void; probe?: (q: 'e' | 'f', e: React.MouseEvent) => void; probed?: ('e' | 'f')[]; animate?: boolean };
 function PortPair({ a, b, ra, rb, color }: { a: Point; b: Point; ra: Point; rb: Point; color: string }) {
   const e1 = along(a, b, 11), e2 = along(ra, rb, 11), em: Point = [(e1[0] + e2[0]) / 2, (e1[1] + e2[1]) / 2], f = along(a, b, 27), t1 = along(a, b, 39), t2 = along(ra, rb, 39);
   return <g className="pair-mark"><path d={`M${e1[0]} ${e1[1]}L${e2[0]} ${e2[1]}`} stroke={color} strokeWidth={1.2}/>
@@ -315,7 +329,7 @@ function Rail({ id, data }: EdgeProps<Edge<RailData>>) {
     })}
   </g>;
 }
-type SignalData = { points: Point[]; lab?: number; color: string; letter: string; name?: string; sub?: string; value?: string; markAt?: number; markDist?: number; dashed?: boolean; selected?: boolean; pick?: (e?: React.MouseEvent) => void; labelSide?: 'right' | 'left' | 'above' | 'below'; target?: Selection; menu?: (e: React.MouseEvent) => void; switchAt?: Point; switchOpen?: boolean; onSwitch?: () => void; animate?: boolean };
+type SignalData = { points: Point[]; lab?: number; color: string; letter: string; name?: string; sub?: string; value?: React.ReactNode; markAt?: number; markDist?: number; dashed?: boolean; selected?: boolean; pick?: (e?: React.MouseEvent) => void; labelSide?: 'right' | 'left' | 'above' | 'below'; target?: Selection; menu?: (e: React.MouseEvent) => void; switchAt?: Point; switchOpen?: boolean; onSwitch?: () => void; animate?: boolean };
 function Signal({ id, data }: EdgeProps<Edge<SignalData>>) {
   const d = data!, k = d.markAt ?? 1, [p, q] = [d.points[k - 1], d.points[k]], m = along(p, q, d.markDist ?? Math.min(len(p, q) / 2, 60));
   const side = d.labelSide ?? (Math.abs(q[0] - p[0]) < .5 ? 'right' : 'above');
@@ -484,11 +498,10 @@ function evenPort(l: MapData['layouts'][string], flow: string, [W, H]: Point): {
 function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string) => void, scenario: Scenario, result: Result | null, at: number, selection: Selection, select: (s: Selection) => void, menu: (s: Selection, e: React.MouseEvent) => void, flip?: () => void, probes?: ProbeState, step?: (k: GainKey, up: boolean) => void, lab = 1) {
   return useMemo(() => {
     if (!map) return { nodes: [] as Node[], edges: [] as Edge[], pinDefault: {} as Record<string, XY> };
-    const value = (signal: string) => { const t = result && readTrace(result, signal); return t ? fmt(t[at]) : undefined; };
+    const value = (signal: string) => result && readTrace(result, signal) ? <Val signal={signal}/> : undefined;
     const on = (s: Selection) => selection.kind === s.kind && selection.id === s.id;
     const nodes: Node[] = [], edges: Edge[] = [], railStart: Record<string, Point> = {}, pinDefault: Record<string, XY> = {};
-    // width/height given: React Flow then never hides a block while waiting to measure it (the graph is rebuilt every frame during Play).
-    const block = (id: string, r: Rect, data: Partial<BlockData>, z = 1) => nodes.push({ id, type: 'block', position: { x: r.x, y: r.y }, width: r.w, height: r.h, draggable: false, zIndex: z, data: { label: '', tone: '', width: r.w, height: r.h, ...data } });
+    const block = (id: string, r: Rect, data: Partial<BlockData>, z = 1) => nodes.push({ id, type: 'block', position: { x: r.x, y: r.y }, draggable: false, zIndex: z, data: { label: '', tone: '', width: r.w, height: r.h, ...data } });
     const sig = (id: string, points: Point[], data: Omit<SignalData, 'points'>) => edges.push({ id, source: 'anchor', target: 'anchor', type: 'signal', zIndex: 5, data: { points, lab, ...data, menu: data.target ? (e: React.MouseEvent) => menu(data.target!, e) : undefined } });
     const card = (id: string) => probes?.show ? (e?: React.MouseEvent) => { if (e) probes.show!({ flow: id, q: 's' }, e); } : undefined;
     const GX = 640, GY = 300;
@@ -587,7 +600,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     block('controller', ctrl, view.controller
       ? { label: 'Tax Authority · Controller', tone: 'controller', open: true, tab: 'above', headSpace: ctrlHead, toggle: () => toggle('controller'), children: <ControllerCircuit map={map} scenario={scenario} selection={selection} pick={select} step={step}/> }
       : { label: 'Tax Authority', tone: 'controller', toggle: () => toggle('controller'), selected: on({ kind: 'agent', id: 'controller' }) });
-    block('sensor', sensor, view.cbs ? { label: 'CBS · how the index is made', tone: 'sensor-open', open: true, tab: 'above', headSpace: cbsHead, toggle: () => toggle('cbs'), children: <CbsCircuit result={result} at={at}/> }
+    block('sensor', sensor, view.cbs ? { label: 'CBS · how the index is made', tone: 'sensor-open', open: true, tab: 'above', headSpace: cbsHead, toggle: () => toggle('cbs'), children: <CbsCircuit/> }
       : { label: 'CBS', tone: 'sensor', selected: selection.kind === 'sensor', toggle: () => toggle('cbs') });
     if (!view.system) block('system', group, { label: 'Housing Market', tone: 'system-closed', toggle: () => toggle('system') });
     else {
@@ -681,7 +694,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     // After a run, dots move along every connection in the direction of the flow (supervisor 2.5).
     if (result) edges.forEach(e => { (e.data as { animate?: boolean }).animate = true; });
     return { nodes, edges, pinDefault };
-  }, [map, view, scenario, result, at, selection, menu, flip, probes, step, lab]);
+  }, [map, view, scenario, result, selection, menu, flip, probes, step, lab]);
 }
 
 function Canvas({ map, view, setView, scenario, result, at, selection, select, focus, menu, flip, probes, step, steps, lab = 1 }: { lab?: number; map: MapData; view: View; setView: (v: View) => void; scenario: Scenario; result: Result | null; at: number; selection: Selection; select: (s: Selection) => void; focus: { id: string; n: number }; menu: (s: Selection, e: React.MouseEvent) => void; flip: () => void; probes: ProbeState; step: (k: GainKey, up: boolean) => void; steps?: StepData }) {
@@ -702,7 +715,7 @@ function Canvas({ map, view, setView, scenario, result, at, selection, select, f
     const t = window.setTimeout(() => { void (id ? flow.fitView({ nodes: [{ id }], duration: 600, padding: .12 }) : flow.fitView({ duration: 600, padding: .04 })); }, 40);
     return () => clearTimeout(t);
   }, [focus.n]);
-  return <ReactFlow nodes={shown} edges={graph.edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: .04 }} nodesConnectable={false} nodesDraggable={false} elementsSelectable={false} minZoom={.1} maxZoom={4} proOptions={{ hideAttribution: true }}
+  return <AtContext.Provider value={{ result, at }}><ReactFlow nodes={shown} edges={graph.edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: .04 }} nodesConnectable={false} nodesDraggable={false} elementsSelectable={false} minZoom={.1} maxZoom={4} proOptions={{ hideAttribution: true }}
     onNodeClick={(_, n) => {
       if (n.id === 'sensor' && view.cbs) return;
       if (n.id === 'sensor') { const at = flow.screenToFlowPosition({ x: _.clientX, y: _.clientY }); probes.addChart({ id: 'cbs', kind: 'cbs' }, { x: at.x - 190, y: at.y - 230 }); }
@@ -711,7 +724,7 @@ function Canvas({ map, view, setView, scenario, result, at, selection, select, f
       else if (n.id === 'controller') { select({ kind: 'agent', id: 'controller' }); if (!view.controller) toggle('controller'); }
       else if (['system', 'cpb', 'finance'].includes(n.id)) { const k = n.id as 'system' | 'cpb' | 'finance'; if (!view[k]) toggle(k); }
       else if (map.agents[n.id]) { select({ kind: 'agent', id: n.id }); if (!view.agents.includes(n.id)) toggle(n.id); }
-    }}><Controls showInteractive={false}/><StickyHeaders nodes={graph.nodes as Node<BlockData>[]} lab={lab}/><PinLayer map={map} probes={withShow} result={result} at={at} fallback={graph.pinDefault} steps={steps}/></ReactFlow>;
+    }}><Controls showInteractive={false}/><StickyHeaders nodes={graph.nodes as Node<BlockData>[]} lab={lab}/><PinLayer map={map} probes={withShow} result={result} at={at} fallback={graph.pinDefault} steps={steps}/></ReactFlow></AtContext.Provider>;
 }
 
 const TOUR_CARD = { w: 700, h: 400 };  // plot cards in the guided tour, model units (readable at the whole-model zoom)
