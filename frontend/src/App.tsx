@@ -86,6 +86,12 @@ export default function App() {
     setS(next); setPinned(null); const r = await api<Result>('/runs', next); setResult(r); setS(r.scenario);
     setTour(t => ({ step: i, n: (t?.n ?? 0) + 1 }));
   });
+  // In the tour, new model parameters (Use in the simulation / Back to the netlist values) run at once, so the
+  // canvas shows the new dynamics without pressing Run.
+  const paramKey = JSON.stringify(s?.param_scale ?? {});
+  useEffect(() => {
+    if (tour && result && !busy && paramKey !== JSON.stringify(result.scenario.param_scale ?? {})) void simulate();
+  }, [paramKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const both = () => guard(async () => {
     const [open, closed] = await Promise.all([api<Result>('/runs', { ...s, feedback: false }), api<Result>('/runs', { ...s, feedback: true })]);
     setPinned(open); setResult(closed); setS(closed.scenario); setNotice('Showing closed loop against open loop with the same scenario.');

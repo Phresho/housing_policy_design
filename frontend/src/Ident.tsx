@@ -148,7 +148,7 @@ function StepView({ id, nominal, preview }: { id: Ident; nominal?: Ident; previe
   return <div ref={box} style={{ minHeight: 320 }} role="img" aria-label="Step response of the house price to the subsidy"/>;
 }
 
-export function IdentPanel({ scenario, update }: { scenario: Scenario; update: (p: Partial<Scenario>) => void }) {
+export function IdentPanel({ scenario, update, onPreview, auto }: { scenario: Scenario; update: (p: Partial<Scenario>) => void; onPreview?: (scale: Record<string, number> | null) => void; auto?: boolean }) {
   // Bank off (original CPB model): the linear model leaves the bank out too (NO_BANK marker, analysis.NO_BANK).
   const own = scenario.param_scale ?? {}, nb: Record<string, number> = scenario.bank ? {} : { NO_BANK: 0 };
   const applied = { ...own, ...nb }, changed = Object.keys(own).length > 0;
@@ -179,6 +179,16 @@ export function IdentPanel({ scenario, update }: { scenario: Scenario; update: (
     try { setPreview(await api<Ident>('/analysis/design_params', { adjust_yr: adjust, cycle_yr: useCycle ? cycle : null, elements: chosen, scale: applied })); }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
+  // The proposal goes to the canvas (run with these parameters, blue dashed in the plot cards).
+  useEffect(() => { onPreview?.(preview ? preview.scale : null); }, [JSON.stringify(preview?.scale ?? null)]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onPreview?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Guided tour: a new adjustment time or cycle fits by itself after a short pause (a fit takes 1-6 s).
+  const touched = useRef(false);
+  useEffect(() => {
+    if (!auto || !touched.current) return;
+    const t = window.setTimeout(() => { void find(); }, 700);
+    return () => clearTimeout(t);
+  }, [auto, adjust, cycle, useCycle]); // eslint-disable-line react-hooks/exhaustive-deps
   const m = id?.metrics;
   // Only elements that matter: +10% changes the adjustment time or the cycle by at least 2% (Claude's threshold).
   const REL = 0.02;
@@ -195,8 +205,8 @@ export function IdentPanel({ scenario, update }: { scenario: Scenario; update: (
       <h4>Change the model</h4>
       <p className="muted small">Choose how fast the price should adjust; the model finds factors on the chosen R, L, C values (between 0.2 and 5, Claude's bounds, with a small penalty on large changes). The table lists only the values where +10% changes the adjustment time or the cycle by at least 2%; the others hardly matter for this path.</p>
       <div className="ident-form">
-        <label>Full adjustment <input type="number" min={0.3} max={40} step={0.1} value={adjust ?? ''} onChange={e => setAdjust(Number(e.target.value))}/> yr</label>
-        <label><input type="checkbox" checked={useCycle} onChange={e => setUseCycle(e.target.checked)}/> and cycle <input type="number" min={0.5} max={40} step={0.1} disabled={!useCycle} value={cycle ?? ''} onChange={e => setCycle(Number(e.target.value))}/> yr</label>
+        <label>Full adjustment <input type="number" min={0.3} max={40} step={0.1} value={adjust ?? ''} onChange={e => { touched.current = true; setAdjust(Number(e.target.value)); }}/> yr</label>
+        <label><input type="checkbox" checked={useCycle} onChange={e => { touched.current = true; setUseCycle(e.target.checked); }}/> and cycle <input type="number" min={0.5} max={40} step={0.1} disabled={!useCycle} value={cycle ?? ''} onChange={e => { touched.current = true; setCycle(Number(e.target.value)); }}/> yr</label>
       </div>
       <table className="pole-table ident-sens"><thead><tr><th></th><th>Element</th><th>Agent</th><th>+10%: adjustment</th><th>cycle</th></tr></thead><tbody>
         {rows.map(r => <tr key={r.name}><td><input type="checkbox" aria-label={`Allow ${r.name} to change`} checked={!!chosen?.includes(r.name)} onChange={e => setChosen(c => e.target.checked ? [...(c ?? []), r.name] : (c ?? []).filter(x => x !== r.name))}/></td>
@@ -209,7 +219,7 @@ export function IdentPanel({ scenario, update }: { scenario: Scenario; update: (
         <table className="pole-table"><thead><tr><th>Element</th><th>Factor</th></tr></thead><tbody>{Object.entries(preview.design.changed).map(([n, f]) => <tr key={n}><td title={n}>{nameOf(n)}</td><td>× {fmt(f, 2)}</td></tr>)}</tbody></table>
         <button className="primary" onClick={() => update({ param_scale: preview.scale })}>Use in the simulation</button>
       </div>}
-      {changed && <p className="state-note">The model runs with changed parameters: {Object.entries(applied).map(([n, f]) => `${nameOf(n)} × ${fmt(f, 2)}`).join(', ')}. The H∞ and Ziegler–Nichols gains were designed for the netlist values; check them again. The operating point and the linearised B4 stay those of the netlist.</p>}
+      {changed && <p className="state-note">The model runs with changed parameters: {Object.entries(own).map(([n, f]) => `${nameOf(n)} × ${fmt(f, 2)}`).join(', ')}. The H∞ and Ziegler–Nichols gains were designed for the netlist values; check them again. The operating point and the linearised B4 stay those of the netlist.</p>}
       <details className="ident-notes"><summary>About these plots</summary>
         <p className="muted small">A permanent +1 in the owner-occupied subsidy u (model units), loop open. Linear model of the netlist at its 2015 operating point; checked against the simulated netlist (difference below 0.03).</p>
         {path && <p className="muted small">{preview ? 'Blue: where the poles move from the current model to the proposed parameters.' : 'Green line: where the dominant pair moved from the netlist values (light grey ×) to the parameters in use.'} Dots: all poles at {path.length} steps in between.</p>}

@@ -327,3 +327,4 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { opac
 .tour-text { display:flex; flex-direction:column; gap:2px; font-size:14px; } .tour-text strong { font-size:15px; color:#1f2a26; } .tour-text span { color:#3c4a45; }
 .tour-nav { display:flex; gap:8px; align-items:center; }
 @media (max-width: 900px) { .tour-bar { grid-template-columns:1fr; } }
+.ghost-note { color:#2F6FB5; }

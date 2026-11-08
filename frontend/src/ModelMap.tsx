@@ -140,7 +140,7 @@ function probeInput(map: MapData, p: Probe): { kind: string; id: string } | null
   if (LOOP_SIGNALS[p.flow]) return null;
   return map.disturbances.some(d => d.id === p.flow) ? { kind: 'signal', id: p.flow } : { kind: 'flow', id: p.flow };
 }
-type ProbeState = { cardSize?: { w: number; h: number }; pins: Probe[]; sensed: Probe[]; unpin: (p: Probe) => void; dock: (p: Probe) => void; stepAt?: string; charts: ChartCard[]; bodeFrom: Probe | null; setBodeFrom: (p: Probe | null) => void; addBode: (from: Probe, to: Probe, at: XY) => void; addChart: (c: ChartCard, at: XY) => void; removeChart: (id: string) => void; openSensor: () => void; ctx: Ctx; cbs?: CbsData; lag: number; cpb?: { year: number[]; yoy: number[] }; pos: Record<string, XY>; setPos: (id: string, p: XY) => void; place: (p: Probe, at: XY) => void; sense: (p: Probe) => void; show?: (p: Probe, e: React.MouseEvent) => void };
+type ProbeState = { ghost?: Result | null; cardSize?: { w: number; h: number }; pins: Probe[]; sensed: Probe[]; unpin: (p: Probe) => void; dock: (p: Probe) => void; stepAt?: string; charts: ChartCard[]; bodeFrom: Probe | null; setBodeFrom: (p: Probe | null) => void; addBode: (from: Probe, to: Probe, at: XY) => void; addChart: (c: ChartCard, at: XY) => void; removeChart: (id: string) => void; openSensor: () => void; ctx: Ctx; cbs?: CbsData; lag: number; cpb?: { year: number[]; yoy: number[] }; pos: Record<string, XY>; setPos: (id: string, p: XY) => void; place: (p: Probe, at: XY) => void; sense: (p: Probe) => void; show?: (p: Probe, e: React.MouseEvent) => void };
 type ProbeActions = { addSens: () => void; hasSens: boolean; pinned: (p: Probe) => boolean; sensed: (p: Probe) => boolean; pin: (p: Probe) => void; sense: (p: Probe) => void; list: Probe[]; count: number; stepInput: string; setStepInput: (id: string) => void };
 const probeKey = (p: Probe) => `${p.flow}:${p.q}`;
 const probeOf = (id: string): Probe => { const [flow, q] = id.split(':'); return { flow, q: q as Probe['q'] }; };
@@ -166,16 +166,17 @@ function probeInfo(map: MapData, p: Probe) {
   return { f, signal, title: `${f.label} · ${p.q === 'f' ? 'flow f' : 'effort e'}`, unit: p.q === 'f' ? f.unit : 'Model units (node voltage)', color: p.q === 'f' ? COLOR[f.kind] : '#6b4fa0',
     step: { kind: p.q === 'f' ? 'flow' : 'effort', id: f.id } as const };
 }
-function MiniPlot({ y, at, color, w = 240, h = 92, k = 1, label }: { y: number[]; at?: number; color: string; w?: number; h?: number; k?: number; label?: string }) {
+function MiniPlot({ y, at, color, w = 240, h = 92, k = 1, label, ghost }: { y: number[]; at?: number; color: string; w?: number; h?: number; k?: number; label?: string; ghost?: number[] }) {
   // White space above and below the line (10% of the range plus room for the max/min labels), so a step that jumps
   // straight to its final value does not run along the top edge.
-  const lo = Math.min(...y), hi = Math.max(...y), pad = (hi - lo) * .1, top = 18 * k, bot = 16 * k;
+  const all = ghost ? [...y, ...ghost] : y, lo = Math.min(...all), hi = Math.max(...all), pad = (hi - lo) * .1, top = 18 * k, bot = 16 * k;
   const sx = (i: number) => 4 + i / (y.length - 1) * (w - 8), sy = (v: number) => h - bot - (hi > lo ? (v - lo + pad) / (hi - lo + 2 * pad) : .5) * (h - top - bot);
   // With a time marker: the line up to that time is dark, the rest faint, and a dot with the year rides on it (Play).
   const pts = (a: number, b: number) => y.slice(a, b).map((v, i) => `${sx(a + i)},${sy(v)}`).join(' ');
   const lx = at !== undefined ? Math.min(Math.max(sx(at), 18 * k), w - 18 * k) : 0, ly = at !== undefined ? (sy(y[at]) < h / 2 ? sy(y[at]) + 15 * k : sy(y[at]) - 8 * k) : 0;
   return <svg width={w} height={h} className="mini-plot"><rect x={0} y={0} width={w} height={h} fill="#fff"/>
     {lo < 0 && hi > 0 && <line x1={0} x2={w} y1={sy(0)} y2={sy(0)} stroke="#d5dbd8"/>}
+    {ghost && <polyline fill="none" stroke="#2F6FB5" strokeWidth={2 * k} strokeDasharray={`${6 * k} ${4 * k}`} strokeLinejoin="round" points={ghost.map((v, i) => `${sx(i)},${sy(v)}`).join(' ')}/>}
     <polyline fill="none" stroke={color} strokeOpacity={at !== undefined ? .22 : 1} strokeWidth={2.2 * k} strokeLinejoin="round" points={pts(0, y.length)}/>
     {at !== undefined && <><polyline fill="none" stroke={color} strokeWidth={2.4 * k} strokeLinejoin="round" points={pts(0, at + 1)}/>
       <line x1={sx(at)} x2={sx(at)} y1={2} y2={h - 2} stroke="#8a9692" strokeDasharray="3 3"/><circle cx={sx(at)} cy={sy(y[at])} r={3.6 * k} fill={color} stroke="#fff" strokeWidth={1.2 * k}/>
@@ -250,7 +251,7 @@ function PinLayer({ map, probes, result, at, fallback, steps }: { map: MapData; 
         <button aria-label="Send to the dock" title="Send to the dock" onClick={() => probes.dock(p)}>⇥</button>
         </PinTools><button className="pin-close" aria-label="Remove from the canvas" title="Remove from the canvas" onClick={() => probes.unpin(p)}>×</button></div>
       {steps ? st?.y ? <><MiniPlot y={st.y} color={color} w={pw} h={ph} k={f}/><small>Step response to {steps.input} +1 · after {st.t![st.t!.length - 1].toFixed(0)} yr: <b>{fmt(st.y[st.y.length - 1])}</b></small></> : <small className="muted">{st?.error ?? 'Computing…'}</small>
-        : y ? <><MiniPlot y={y} at={at} color={color} w={pw} h={ph} k={f} label={result!.year[at].toFixed(1)}/><small>{result!.year[at].toFixed(1)}: <b>{fmt(y[at])}</b></small></> : <small className="muted">Run the simulation to see this signal.</small>}</div>;
+        : y ? <><MiniPlot y={y} at={at} color={color} w={pw} h={ph} k={f} label={result!.year[at].toFixed(1)} ghost={probes.ghost && info.signal ? readTrace(probes.ghost, info.signal) : undefined}/><small>{result!.year[at].toFixed(1)}: <b>{fmt(y[at])}</b>{probes.ghost && info.signal && readTrace(probes.ghost, info.signal) ? <span className="ghost-note"> · blue dashed: proposed parameters {fmt(readTrace(probes.ghost, info.signal)![at])} (new parameters also move the level)</span> : null}</small></> : <small className="muted">Run the simulation to see this signal.</small>}</div>;
   })}</div>;
 }
 const nodeTypes = { block: Block };
@@ -358,7 +359,7 @@ function GainSteps({ scenario, update }: { scenario: Scenario; update: (patch: P
     {!scenario.feedback && <p className="muted small">The gains act once the loop switch is closed.</p>}
     <p className="muted small">A step sets the price PID to Custom. Run again to see the effect.</p></>;
 }
-function Inspector({ map, selection, pick, result, pinned, scenario, enter, layer, tf, setTf, update, probes, design, setDesign }: { map: MapData; selection: Selection; pick: (s: Selection) => void; result: Result | null; pinned: Result | null; scenario: Scenario; enter: (id: string) => void; layer: string; tf: TfPicks; setTf: (t: TfPicks) => void; update?: (patch: Partial<Scenario>) => void; probes?: ProbeActions; design?: Design; setDesign?: (d: Design) => void }) {
+function Inspector({ map, selection, pick, result, pinned, scenario, enter, layer, tf, setTf, update, probes, design, setDesign, onPreview, auto }: { onPreview?: (scale: Record<string, number> | null) => void; auto?: boolean; map: MapData; selection: Selection; pick: (s: Selection) => void; result: Result | null; pinned: Result | null; scenario: Scenario; enter: (id: string) => void; layer: string; tf: TfPicks; setTf: (t: TfPicks) => void; update?: (patch: Partial<Scenario>) => void; probes?: ProbeActions; design?: Design; setDesign?: (d: Design) => void }) {
   const lines = (signal: string, name: string, color: string): Line[] => {
     if (!result) return [];
     const own = readTrace(result, signal), other = pinned && readTrace(pinned, signal);
@@ -367,7 +368,7 @@ function Inspector({ map, selection, pick, result, pinned, scenario, enter, laye
   const hint = (what: string) => <p className="run-hint">Run the simulation to see {what}.</p>;
   const name = (id: string) => id === 'controller' ? 'Controller' : map.agents[id]?.label ?? id;
   const go = (id: string) => pick({ kind: 'agent', id });
-  if (selection.kind === 'ident') return <IdentPanel scenario={scenario} update={update ?? (() => undefined)}/>;
+  if (selection.kind === 'ident') return <IdentPanel scenario={scenario} update={update ?? (() => undefined)} onPreview={onPreview} auto={auto}/>;
   if (selection.kind === 'tf') return <TransferPanel input={tf.input} output={tf.output} feedback={scenario.feedback} K={[scenario.kp, scenario.ki, scenario.kd]} filtered={scenario.derivative_filter} swap={() => setTf({ input: tf.output, output: tf.input })} clear={() => setTf({})}/>;
   if (selection.kind === 'probe') {
     const p = probeOf(selection.id), info = probeInfo(map, p), color = p.q === 'f' ? COLOR[info.f.kind] : '#6b4fa0';
@@ -745,6 +746,16 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   const [sensed, setSensed] = useState<Probe[]>([]);
   const [pinPos, setPinPos] = useState<Record<string, { x: number; y: number }>>({});
   const [charts, setCharts] = useState<ChartCard[]>([]);
+  // Proposed model parameters from the identification panel: run them too, and draw that run as a blue dashed
+  // line in the plot cards next to the current run (so a new adjustment time or cycle shows on the canvas).
+  const [previewScale, setPreviewScale] = useState<Record<string, number> | null>(null);
+  const [ghost, setGhost] = useState<Result | null>(null);
+  useEffect(() => {
+    if (!previewScale) { setGhost(null); return; }
+    let live = true;
+    api<Result>('/runs', { ...scenario, param_scale: previewScale }).then(r => { if (live) setGhost(r); }).catch(() => { if (live) setGhost(null); });
+    return () => { live = false; };
+  }, [JSON.stringify(previewScale), result]); // eslint-disable-line react-hooks/exhaustive-deps
   // Tour step: closed blocks, the whole model in view, and only this step's plot cards (they play with the new run).
   useEffect(() => {
     if (!tour) return;
@@ -773,9 +784,9 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   const stepGain = useCallback((k: GainKey, up: boolean) => latest.current.update(stepPatch(latest.current.scenario, k, up)), []);
   const same = (a: Probe) => (b: Probe) => a.flow === b.flow && a.q === b.q;
   const toggleIn = (set: React.Dispatch<React.SetStateAction<Probe[]>>) => (p: Probe) => set(old => old.some(same(p)) ? old.filter(x => !same(p)(x)) : [...old, p]);
-  const probeState = useMemo<ProbeState>(() => ({ cardSize: tour ? TOUR_CARD : undefined, pins, sensed, unpin: p => setPins(old => old.filter(x => !same(p)(x))), dock: p => { setDock(true); setSelection(p.q === 's' && LOOP_SIGNALS[p.flow] ? LOOP_SIGNALS[p.flow].dock : { kind: 'probe', id: `${p.flow}:${p.q}` }); }, stepAt: stepping ? stepInput : undefined, charts, bodeFrom, setBodeFrom, ctx, removeChart: id => setCharts(old => old.filter(c => c.id !== id)), cbs, lag, cpb, openSensor: () => { setDock(true); setSelection({ kind: 'sensor', id: '' }); },
+  const probeState = useMemo<ProbeState>(() => ({ ghost: selection.kind === 'ident' ? ghost : null, cardSize: tour ? TOUR_CARD : undefined, pins, sensed, unpin: p => setPins(old => old.filter(x => !same(p)(x))), dock: p => { setDock(true); setSelection(p.q === 's' && LOOP_SIGNALS[p.flow] ? LOOP_SIGNALS[p.flow].dock : { kind: 'probe', id: `${p.flow}:${p.q}` }); }, stepAt: stepping ? stepInput : undefined, charts, bodeFrom, setBodeFrom, ctx, removeChart: id => setCharts(old => old.filter(c => c.id !== id)), cbs, lag, cpb, openSensor: () => { setDock(true); setSelection({ kind: 'sensor', id: '' }); },
     addChart: (c, at) => { setCharts(old => old.some(x => x.id === c.id) ? old : [...old, c]); setPinPos(old => ({ ...old, [c.id]: at })); },
-    addBode: (from, to, at) => { const id = `bode-${probeKey(from)}-${probeKey(to)}`; setCharts(old => old.some(c => c.id === id) ? old : [...old, { id, kind: 'bode', from, to }]); setPinPos(old => ({ ...old, [id]: at })); setBodeFrom(null); }, pos: pinPos, setPos: (id, q) => setPinPos(old => ({ ...old, [id]: q })), place: (p, at) => { setPins(old => old.some(same(p)) ? old : [...old, p]); setPinPos(old => ({ ...old, [`pin-${p.flow}:${p.q}`]: at })); }, sense: toggleIn(setSensed) }), [pins, sensed, pinPos, tuning, stepInput, charts, bodeFrom, ctx, cbs, lag, cpb, !!tour]);
+    addBode: (from, to, at) => { const id = `bode-${probeKey(from)}-${probeKey(to)}`; setCharts(old => old.some(c => c.id === id) ? old : [...old, { id, kind: 'bode', from, to }]); setPinPos(old => ({ ...old, [id]: at })); setBodeFrom(null); }, pos: pinPos, setPos: (id, q) => setPinPos(old => ({ ...old, [id]: q })), place: (p, at) => { setPins(old => old.some(same(p)) ? old : [...old, p]); setPinPos(old => ({ ...old, [`pin-${p.flow}:${p.q}`]: at })); }, sense: toggleIn(setSensed) }), [pins, sensed, pinPos, tuning, stepInput, charts, bodeFrom, ctx, cbs, lag, cpb, !!tour, ghost, selection.kind]);
   const actions: ProbeActions = { addSens: () => setCharts(old => old.some(c => c.kind === 'sens') ? old.filter(c => c.kind !== 'sens') : [...old, { id: 'sens', kind: 'sens' }]), hasSens: charts.some(c => c.kind === 'sens'), pinned: p => pins.some(same(p)), sensed: p => sensed.some(same(p)), pin: toggleIn(setPins), sense: toggleIn(setSensed), list: sensed, count: pins.length, stepInput, setStepInput };
   const canvasRef = useRef<HTMLDivElement>(null);
   const labelOf = (t: Selection) => !map ? t.id : t.kind === 'flow' ? map.flows.find(f => f.id === t.id)?.label ?? t.id : t.kind === 'signal' ? [...map.disturbances, ...map.outputs].find(o => o.id === t.id)?.label ?? t.id : t.id;
@@ -833,7 +844,7 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
         </div>}
         <div className="map-key"><span className="k money">Money port pair</span><span className="k real">Goods port pair</span><span className="k shock">d: shock</span><span className="k policy">u: subsidy</span><span className="muted">f: flow, e: incentive. Click + or a block to open it in place. Right-click two flows for a transfer function.</span></div>
       </div>
-      {dock ? <aside className="inspector" aria-live="polite"><button className="dock-toggle" aria-label="Collapse panel" title="Collapse panel" onClick={() => setDock(false)}><Minus size={14}/></button><Inspector map={map} selection={selection} pick={setSelection} result={result} pinned={pinned} scenario={scenario} enter={enter} layer="" tf={tf} setTf={setTf} update={update} probes={actions} design={design} setDesign={setDesign}/></aside>
+      {dock ? <aside className="inspector" aria-live="polite"><button className="dock-toggle" aria-label="Collapse panel" title="Collapse panel" onClick={() => setDock(false)}><Minus size={14}/></button><Inspector map={map} selection={selection} pick={setSelection} result={result} pinned={pinned} scenario={scenario} enter={enter} layer="" tf={tf} setTf={setTf} update={update} probes={actions} design={design} setDesign={setDesign} onPreview={setPreviewScale} auto={!!tour}/></aside>
         : <button className="dock-handle" data-no-shot aria-label="Open panel" title="Open panel" onClick={() => setDock(true)}><ChevronLeft size={16}/><span>Panel</span></button>}
     </div>
   </section>;
