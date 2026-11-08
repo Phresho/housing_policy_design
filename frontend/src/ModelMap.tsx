@@ -634,13 +634,16 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     // run up into the lane under the frame header, along it, down the right margin and out to CBS. x1 starts left of
     // x2 and runs outside it, so the two never cross.
     let x1pts: Point[] = [[group.x + group.w, gc + xIn.a], [sensor.x, gc + xIn.a]], x2pts: Point[] = [[group.x + group.w, gc + xIn.b], [sensor.x, gc + xIn.b]];
-    if (view.system) {
+    if (view.system && !scenario.bank) {
+      // No financial sector to the right: straight out of the right side of the CPB box.
+      x1pts = [[R.cpb.x + R.cpb.w, gc + xIn.a], [sensor.x, gc + xIn.a]]; x2pts = [[R.cpb.x + R.cpb.w, gc + xIn.b], [sensor.x, gc + xIn.b]];
+    } else if (view.system) {
       const src = view.cpb ? R.investors : R.cpb, b1 = group.y + HEAD_FLOW * lab + 26, b2 = b1 + 22, vx1 = group.x + group.w - 22, vx2 = vx1 - 22;
       const sx1 = src.x + src.w * .55, sx2 = src.x + src.w * .75;
       x1pts = [[sx1, src.y], [sx1, b1], [vx1, b1], [vx1, gc + xIn.a], [sensor.x, gc + xIn.a]];
       x2pts = [[sx2, src.y], [sx2, b2], [vx2, b2], [vx2, gc + xIn.b], [sensor.x, gc + xIn.b]];
     }
-    const xMark = view.system ? { markAt: 4, markDist: 22 + 95 * lab } : {};
+    const xMark = view.system && scenario.bank ? { markAt: 4, markDist: 22 + 95 * lab } : view.system ? { markDist: (sensor.x - R.cpb.x - R.cpb.w) / 2 } : {};
     sig('x1', x1pts, { color: '#e0782a', letter: 'x₁', name: 'Construction payments', value: value('I(Construction_cost)'), markDist: 95 * lab, ...xMark, labelSide: 'above', selected: on({ kind: 'signal', id: 'y_price' }), pick: card('x1') ?? (() => select({ kind: 'signal', id: 'y_price' })), target: { kind: 'signal', id: 'y_price' } });
     sig('x2', x2pts, { color: COLOR.real, letter: 'x₂', name: 'New construction', value: value('I(Construction)'), markDist: 95 * lab, ...xMark, labelSide: 'below', selected: on({ kind: 'flow', id: 'houses' }), pick: card('x2') ?? (() => select({ kind: 'flow', id: 'houses' })), target: { kind: 'flow', id: 'houses' } });
     // y always leaves the sensor; the feedback branch is grey and dashed with the loop switch open.
@@ -716,8 +719,14 @@ function Canvas({ map, view, setView, scenario, result, at, selection, select, f
   const shown = graph.nodes;
   useEffect(() => {
     const id = focus.id;
-    const t = window.setTimeout(() => { void (id ? flow.fitView({ nodes: [{ id }], duration: 600, padding: .12 }) : flow.fitView({ duration: 600, padding: .04 })); }, 40);
-    return () => clearTimeout(t);
+    // A block that just opened may not be measured yet; fitView on it then does nothing (returns false), so retry.
+    let t = 0, tries = 0, live = true;
+    const go = async () => {
+      const ok = id ? await flow.fitView({ nodes: [{ id }], duration: 600, padding: .12 }) : await flow.fitView({ duration: 600, padding: .04 });
+      if (live && !ok && ++tries < 12) t = window.setTimeout(go, 150);
+    };
+    t = window.setTimeout(go, 40);
+    return () => { live = false; clearTimeout(t); };
   }, [focus.n]);
   return <AtContext.Provider value={{ result, at }}><ReactFlow nodes={shown} edges={graph.edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: .04 }} nodesConnectable={false} nodesDraggable={false} elementsSelectable={false} minZoom={.1} maxZoom={4} proOptions={{ hideAttribution: true }}
     onNodeClick={(_, n) => {
