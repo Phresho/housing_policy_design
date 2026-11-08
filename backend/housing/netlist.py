@@ -72,6 +72,12 @@ def set_constant_subsidy(lines: list[str], u: float) -> None:
     lines[i] = f"I§Owner_occupied_subsidies 0 N031 {u:.8g}"
 
 
+def set_subsidy_pwl(lines: list[str], points: list[tuple[float, float]]) -> None:
+    """Open-loop netlist with the owner-occupied subsidy as a PWL of (circuit time s, value) points."""
+    i = _index(lines, "I§Owner_occupied_subsidies 0 N031 ")
+    lines[i] = "I§Owner_occupied_subsidies 0 N031 PWL(" + " ".join(f"{t:.6g} {v:.6g}" for t, v in points) + ")"
+
+
 def set_tran(lines: list[str], tran: str) -> None:
     i = _index(lines, ".tran ")
     lines[i] = tran

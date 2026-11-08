@@ -64,6 +64,18 @@ class Scenario(BaseModel):
     # Inflation for the comparison with the nominal CBS index: the model's year-on-year change plus this rate.
     # It does not enter the circuit.
     inflation_pct: float = Field(0.0, ge=0, le=5)
+    # Open-loop owner-occupied subsidy (guided tour, 7 Nov 2026): the historical path, one step, or a phase-out staircase.
+    # 'step': subsidy_base until subsidy_step_yr, then subsidy_base + subsidy_step.
+    # 'staircase': phase_from until phase_start_yr, then phase_steps equal steps down to 0, the last at phase_start_yr + phase_years.
+    # Values in model units of the subsidy source (the historical path runs 23 to 30). Each edge takes 0.01 year.
+    subsidy_path: Literal["historical", "step", "staircase"] = "historical"
+    subsidy_base: float = Field(0.0, ge=-60, le=200)
+    subsidy_step: float = Field(10.0, ge=-100, le=100)
+    subsidy_step_yr: float = Field(2005.0, ge=1997, le=2024)
+    phase_from: float = Field(30.0, ge=0, le=200)
+    phase_start_yr: float = Field(2005.0, ge=1997, le=2024)
+    phase_years: float = Field(10.0, ge=0.5, le=25)
+    phase_steps: int = Field(10, ge=1, le=40)
     crisis_scale: float = Field(1.0, ge=0, le=2)
     crisis_start_yr: float = Field(YEAR_AT_RAW_ZERO + 15.0, ge=2000, le=2020)  # netlist: 90 s = 2011.46
     # W-shaped crisis: an extra, earlier dip added to the netlist pulse (Claude's addition, 5 Nov 2026).
@@ -142,6 +154,21 @@ def equilibrium_subsidy(s: Scenario) -> dict:
     return {"u_ss": u1, "price0": y1, "free_price0": None, "clipped": not lo <= u1 <= hi, "u_start": min(max(u1, lo), hi)}
 
 
+def subsidy_points(s: Scenario) -> list[tuple[float, float]]:
+    """PWL points (circuit time, value) of the open-loop subsidy for subsidy_path 'step' or 'staircase'."""
+    t = lambda year: max(0.0, (year - YEAR_AT_RAW_ZERO) * SECONDS_PER_YEAR)
+    edge, end = 0.01 * SECONDS_PER_YEAR, 400.0
+    if s.subsidy_path == "step":
+        a, b = s.subsidy_base, s.subsidy_base + s.subsidy_step
+        return [(0, a), (t(s.subsidy_step_yr), a), (t(s.subsidy_step_yr) + edge, b), (end, b)]
+    pts, level, drop = [(0.0, s.phase_from)], s.phase_from, s.phase_from / s.phase_steps
+    for k in range(1, s.phase_steps + 1):
+        at = t(s.phase_start_yr + s.phase_years * k / s.phase_steps) - edge
+        pts += [(at, level), (at + edge, max(0.0, level - drop))]
+        level = max(0.0, level - drop)
+    return pts + [(end, level)]
+
+
 def build(s: Scenario, b4: Literal["linear", "nonlinear", "original"] = "linear", u_start: float | None = None) -> list[str]:
     """b4: 'linear' (the site: gain -10, linearised), 'nonlinear' (gain -10), 'original' (the netlist's -1).
     u_start: equilibrium subsidy for the equilibrium start (feedback with equilibrium_start); None: soft start."""
@@ -156,6 +183,8 @@ def build(s: Scenario, b4: Literal["linear", "nonlinear", "original"] = "linear"
             nl.set_share_controller(lines, nl.Controller(s.skp, s.ski, s.skd, FILTER_PER_S if s.derivative_filter else None), s.share_target_pct)
     else:
         nl.set_open_loop(lines)
+        if s.subsidy_path != "historical":
+            nl.set_subsidy_pwl(lines, subsidy_points(s))
         nl.scale_source(lines, "I§Owner_occupied_subsidies ", s.subsidy_scale)
     if not s.rental_subsidy:
         lines[nl._index(lines, "I§Rental_subsidies1 ")] = "I§Rental_subsidies1 0 N029 0"

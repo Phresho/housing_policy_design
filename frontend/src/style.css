@@ -307,3 +307,23 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { opac
 .pin-card.step-mode .pin-tools.open { background:#f6faff; box-shadow:-6px 0 8px 2px #f6faff; }
 .results-toggle { display:flex; align-items:center; gap:10px; width:100%; margin:14px 0 6px; padding:12px 14px; border:1px solid #dfe5e2; border-radius:10px; background:#fff; cursor:pointer; text-align:left; font:inherit; }
 .results-toggle:hover { background:#f6f8f7; } .results-toggle .rt-title { font-weight:700; font-size:15px; } .results-toggle .rt-arrow { flex:none; transition:transform .15s; color:#5b6b64; } .results-toggle.open .rt-arrow { transform:rotate(90deg); }
+.pin-head button.pin-close { flex:none; position:relative; z-index:3; }
+.pin-tools.open { right:24px; }
+.top-actions { flex-wrap:nowrap; white-space:nowrap; } /* the screenshot copy measures text a few px wider; do not wrap */
+/* while a screenshot is taken (shot.ts): no scrollbars */
+.shooting, .shooting * { scrollbar-width:none !important; } .shooting *::-webkit-scrollbar { display:none !important; width:0 !important; height:0 !important; }
+
+.mini-year { font-size:calc(10px * var(--s,1)); font-weight:700; fill:#3d4744; paint-order:stroke; stroke:#fff; stroke-width:3px; }
+.year-slider .play { padding:4px 8px; min-height:0; }
+.pp-dom-line { stroke:#3f9a1f; stroke-width:1.8; stroke-dasharray:6 4; } .pp-dom-label { font-size:12.5px; font-weight:600; fill:#2f7a17; paint-order:stroke; stroke:#fff; stroke-width:3px; }
+.map-node.sensor-open { background:#f1f8ec; border:2px solid #1b1b1b; border-radius:16px; }
+.cbs-wire { stroke:#3f9a1f; stroke-width:3; fill:none; } .cbs-wire.muted { stroke:#b8c2bd; stroke-dasharray:10 8; } .cbs-dot { fill:#3f9a1f; }
+.cbs-box rect { fill:#fff; stroke:#26332e; stroke-width:2.4; } .cbs-box.index rect, .cbs-box.yoy rect { stroke:#2f7a17; stroke-width:3; } .cbs-box.muted rect { stroke:#b8c2bd; }
+.cbs-box .t { font-size:24px; font-weight:700; text-anchor:middle; fill:#10222b; } .cbs-box .f { font-size:17px; text-anchor:middle; fill:#3c4a45; font-style:italic; } .cbs-box .v { font-size:20px; font-weight:700; text-anchor:middle; fill:#2f7a17; }
+.cbs-box.muted .t, .cbs-box.muted .v { fill:#8a9692; } .cbs-port { font-size:19px; fill:#3c4a45; font-weight:600; } .cbs-note { font-size:17px; fill:#5f6b67; font-style:italic; }
+.tour-bar { display:grid; grid-template-columns:auto 1fr auto; gap:16px; align-items:center; margin:0 0 12px; padding:12px 16px; background:#f1f8ec; border:1px solid #cfe3c3; border-radius:12px; }
+.tour-steps { display:flex; gap:6px; } .tour-steps button { width:30px; height:30px; padding:0; border-radius:50%; border:1.5px solid #9cc58a; background:#fff; color:#2f7a17; font-weight:700; min-height:0; }
+.tour-steps button.done { background:#dcefd2; } .tour-steps button.on { background:#3f9a1f; color:#fff; border-color:#3f9a1f; }
+.tour-text { display:flex; flex-direction:column; gap:2px; font-size:14px; } .tour-text strong { font-size:15px; color:#1f2a26; } .tour-text span { color:#3c4a45; }
+.tour-nav { display:flex; gap:8px; align-items:center; }
+@media (max-width: 900px) { .tour-bar { grid-template-columns:1fr; } }

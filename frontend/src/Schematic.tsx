@@ -154,7 +154,6 @@ export function ControllerCircuit({ map, scenario, selection, pick, step }: { ma
       {(['p', 'i', 'd'] as const).map((g, i) => <g key={g}>{stepper(440, y0 + (i - 1) * 62, (key === 's' ? 's' + 'k' + g : 'k' + g) as GainKey, .6)}{key === 'p' && zoom(254, y0 + (i - 1) * 62 - 20, g.toUpperCase() as Part)}</g>)}
       <circle className="sum-mark" cx={540} cy={y0} r={22}/></g>;
     return <svg className="circuit embedded" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label="Controller circuit, two goals">
-      {BREADBOARD}<rect x={0} y={0} width={w} height={h} fill="url(#breadboard)"/>
       {path([[0, 240], [110, 240]], true, 'e')}{path([[110, 100], [110, 370]], true, 'split')}<circle cx={110} cy={240} r={7} className="junction"/>
       <text className="port-sub" x={128} y={92}>error₁</text><text className="port-sub" x={128} y={362}>error₂</text>
       {pid(100, [scenario.kp, scenario.ki, scenario.kd], ['B§PID_P', 'B§PID_I_Robust', 'B§PID_D'], 'p')}
@@ -174,7 +173,6 @@ export function ControllerCircuit({ map, scenario, selection, pick, step }: { ma
     </svg>;
   }
   return <svg className="circuit embedded" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label="Controller circuit">
-    {BREADBOARD}<rect x={0} y={0} width={w} height={h} fill="url(#breadboard)"/>
     {path([[0, 240], [160, 240]], closed, 'e')}{path([[160, 240], [160, 100], [330, 100]], closed, 'p')}{path([[160, 240], [330, 240]], closed, 'i')}{path([[160, 240], [160, 380], [330, 380]], closed, 'd')}
     {path([[610, 100], [700, 100], [700, 216]], closed, 'po')}{path([[610, 240], [676, 240]], closed, 'io')}{path([[610, 380], [700, 380], [700, 264]], closed, 'do')}
     {path([[724, 240], [930, 240]], closed, 'pid-out')}{path([[930, 140], [930, 240]], !closed, 'hist-out')}{path([[930, 240], [1100, 240]], true, 'u2')}{path([[1060, 400], [1100, 400]], true, 'u1')}

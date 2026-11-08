@@ -111,6 +111,9 @@ function PolePlot({ ev, ov, spec, setSpec, showLocus, showOpen, showZeros }: { e
   const cross = (re: number, im: number, cls: string, key: string, r = 7) => <path key={key} className={cls} d={`M${sx(re) - r} ${sy(im) - r}L${sx(re) + r} ${sy(im) + r}M${sx(re) - r} ${sy(im) + r}L${sx(re) + r} ${sy(im) - r}`}/>;
   const visible = (p: { re: number; im: number }) => p.re >= X0 && p.re <= X1 && Math.abs(p.im) <= Y1;
   const offscreen = ev ? ev.poles.filter(p => !visible(p)).length : 0;
+  // Dominant closed-loop pair: the slowest oscillating pole the gains can move (pinned plant poles excluded).
+  // A dashed horizontal line to the axis gives its cycle length, as in the identification plot.
+  const dom = ev?.poles.filter(p => p.im > 1e-3 && !p.pinned && visible(p)).sort((a, b) => b.re - a.re)[0];
   return <div className="pole-plot-wrap">
     <svg ref={svg} className={'pole-plot' + (drag ? ' dragging' : '')} viewBox={`0 0 ${PW} ${PH}`} role="img" aria-label="Closed-loop poles against the two lines" onPointerMove={move} onPointerUp={() => setDrag(null)} onPointerLeave={() => setDrag(null)}>
       <defs><clipPath id="plot-area"><rect x={M.l} y={M.t} width={PW - M.l - M.r} height={PH - M.t - M.b}/></clipPath></defs>
@@ -146,6 +149,8 @@ function PolePlot({ ev, ov, spec, setSpec, showLocus, showOpen, showZeros }: { e
         <circle cx={M.l + 22} cy={sy(2 * Math.PI / spec.minCycle)} r={9} className="pp-handle" role="slider" aria-label="Shortest cycle line" aria-valuenow={spec.minCycle} tabIndex={0} onPointerDown={() => setDrag('cycle')}
           onKeyDown={e => { if (e.key === 'ArrowUp') setSpec({ ...spec, minCycle: Math.max(0.5, +(spec.minCycle! - 0.1).toFixed(1)) }); if (e.key === 'ArrowDown') setSpec({ ...spec, minCycle: Math.min(30, +(spec.minCycle! + 0.1).toFixed(1)) }); }}/>
         <text x={M.l + 36} y={sy(2 * Math.PI / spec.minCycle) - 6} className="pp-spec-label">shortest cycle {num(spec.minCycle, 1)} yr</text></g>}
+      {dom && <g className="pp-dom"><line x1={M.l} x2={sx(dom.re)} y1={sy(dom.im)} y2={sy(dom.im)} className="pp-dom-line"/>
+        <text x={M.l + 6} y={sy(dom.im) - 6} className="pp-dom-label">cycle {num(2 * Math.PI / dom.im, 1)} yr</text></g>}
       <text x={sx(0.5)} y={M.t + 40} className="pp-unstable-label" transform={`rotate(-90 ${sx(0.5)} ${M.t + 40})`} textAnchor="end">unstable</text>
       <text x={M.l + 10} y={PH - M.b - 10} className="pp-allowed-label">admissible</text>
       {[-6, -5, -4, -3, -2, -1, 0].map(x => <text key={x} x={sx(x)} y={PH - M.b + 16} textAnchor="middle" className="pp-tick">{x}</text>)}
@@ -164,7 +169,7 @@ function LogSlider({ label, value, lo, hi, onChange }: { label: string; value: n
 }
 function Light({ ok, label, value }: { ok: boolean; label: string; value: string }) { return <div className={'light ' + (ok ? 'ok' : 'bad')}><span aria-hidden="true"/>{label}<b>{value}</b></div>; }
 
-const SHOCK_CHOICES = [['d_crisis', 'Financial crisis shock'], ['d_covid', 'Covid shock'], ['d_income', 'Income'], ['d_mortgages', 'Mortgage lending'], ['d_interest', 'Mortgage interest rate']] as const;
+const SHOCK_CHOICES = [['d_crisis', 'Financial crisis shock (firms)'], ['d_covid', 'Covid shock'], ['d_income', 'Income'], ['d_mortgages', 'Mortgage lending'], ['d_interest', 'Mortgage interest rate']] as const;
 
 export function PoleDesign({ design, setDesign, useInSimulation }: { design: Design; setDesign: (d: Design) => void; useInSimulation: () => void }) {
   const [ov, setOv] = useState<Overview>(); const [err, setErr] = useState('');

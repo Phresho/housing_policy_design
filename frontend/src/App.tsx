@@ -4,6 +4,7 @@ import { api } from './api';
 import { savePng } from './shot';
 import { Chart, type Line } from './Chart';
 import { ModelMap } from './ModelMap';
+import { TOUR, TourBar } from './Tour';
 import { Robustness, type Design } from './Analysis';
 import type { Catalogue, ControllerKey, Kpis, Result, SavedRow, Scenario } from './types';
 
@@ -77,6 +78,14 @@ export default function App() {
   const update = (patch: Partial<Scenario>) => { setS(old => old && { ...old, ...patch }); setNotice(''); };
   const guard = async (fn: () => Promise<void>) => { setError(''); setNotice(''); setBusy(true); try { await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
   const simulate = () => guard(async () => { const r = await api<Result>('/runs', s); setResult(r); setS(r.scenario); });
+  // Guided tour: each step loads its scenario (from the start values), runs it and tells the canvas what to show.
+  const [tour, setTour] = useState<{ step: number; n: number } | null>(null);
+  const goTour = (i: number) => guard(async () => {
+    if (!catalogue) return;
+    const next = { ...catalogue.defaults, name: `Tour ${i + 1}: ${TOUR[i].title}`, ...TOUR[i].patch } as Scenario;
+    setS(next); setPinned(null); const r = await api<Result>('/runs', next); setResult(r); setS(r.scenario);
+    setTour(t => ({ step: i, n: (t?.n ?? 0) + 1 }));
+  });
   const both = () => guard(async () => {
     const [open, closed] = await Promise.all([api<Result>('/runs', { ...s, feedback: false }), api<Result>('/runs', { ...s, feedback: true })]);
     setPinned(open); setResult(closed); setS(closed.scenario); setNotice('Showing closed loop against open loop with the same scenario.');
@@ -148,8 +157,8 @@ export default function App() {
           <Slider label="Mortgage-lending path, time shift" value={s.mortgage_shift_yr} min={-4} max={4} step={.1} format={yrs} onChange={v => update({ mortgage_shift_yr: v })}/>
         </div></Group>
         <Group title="Financial crisis" summary={`× ${num(s.crisis_scale)} from ${s.crisis_start_yr.toFixed(1)}${s.crisis_w ? ', W-shaped' : ''}`} dirty={dirty(['crisis_scale', 'crisis_start_yr', 'crisis_w', 'crisis_w_start_yr', 'crisis_w_scale', 'crisis_w_on_yr'])}><div className="sliders">
-          <Slider label="Financial crisis shock" value={s.crisis_scale} min={0} max={2} step={.05} format={times} onChange={v => update({ crisis_scale: v })}/>
-          <Slider label="Financial crisis shock: starts in" hint="Netlist: 2011.46." value={s.crisis_start_yr} min={2000} max={2020} step={.1} format={v => num(v, 1)} onChange={v => update({ crisis_start_yr: v })}/>
+          <Slider label="Financial crisis shock (firms)" value={s.crisis_scale} min={0} max={2} step={.05} format={times} onChange={v => update({ crisis_scale: v })}/>
+          <Slider label="Financial crisis shock (firms): starts in" hint="Netlist: 2011.46." value={s.crisis_start_yr} min={2000} max={2020} step={.1} format={v => num(v, 1)} onChange={v => update({ crisis_start_yr: v })}/>
           <label className="check"><input type="checkbox" checked={s.crisis_w} onChange={e => update({ crisis_w: e.target.checked })}/> <span><strong>W-shaped crisis</strong><br/><small className="muted">Adds an earlier dip to the crisis shock: 1-year fall, a time at full depth, 1-year recovery. Depth relative to the main crisis pulse. Claude's addition.</small></span></label>
           {s.crisis_w && <>
             <Slider label="First dip: starts in" value={s.crisis_w_start_yr} min={2000} max={2020} step={.1} format={v => num(v, 1)} onChange={v => update({ crisis_w_start_yr: v })}/>
@@ -178,9 +187,22 @@ export default function App() {
   </>;
   // Policy inputs: target, open-loop path, controller choice, rental-share loop. In the left dock.
   const policyControls = <>
-        <Group title="Subsidies" summary={`rental ${s.rental_subsidy ? 'on' : 'off'}${s.feedback ? '' : `, owner path × ${num(s.subsidy_scale)}`}`} dirty={dirty(['rental_subsidy', 'subsidy_scale'])} open>
+        <Group title="Subsidies" summary={`rental ${s.rental_subsidy ? 'on' : 'off'}${s.feedback ? '' : `, owner path ${s.subsidy_path === 'historical' ? `× ${num(s.subsidy_scale)}` : s.subsidy_path === 'step' ? 'one step' : 'phase-out'}`}`} dirty={dirty(['rental_subsidy', 'subsidy_scale', 'subsidy_path', 'subsidy_base', 'subsidy_step', 'subsidy_step_yr', 'phase_from', 'phase_start_yr', 'phase_years', 'phase_steps'])} open>
         <label className="check"><input type="checkbox" checked={s.rental_subsidy} onChange={e => update({ rental_subsidy: e.target.checked })}/> <span><strong>Rental subsidy</strong><br/><small className="muted">Historical path: 4 until 2023, then 0. Off: 0 for the whole run.{s.share_control && s.feedback ? ' The rental-share loop still moves money to renters.' : ''}</small></span></label>
-        {!s.feedback && <div className="sliders"><Slider label="Historical subsidy path" hint="1.00 is the path in the netlist, 20.98 to 29.34 model units." value={s.subsidy_scale} min={0} max={10} step={.05} format={times} onChange={v => update({ subsidy_scale: v })}/></div>}
+        {!s.feedback && <>
+          <div className="choices" role="radiogroup" aria-label="Owner-occupied subsidy path">{([['historical', 'Historical'], ['step', 'One step'], ['staircase', 'Phase-out']] as const).map(([id, l]) => <label key={id} className={s.subsidy_path === id ? 'choice active' : 'choice'}><input type="radio" name="subsidy_path" checked={s.subsidy_path === id} onChange={() => update({ subsidy_path: id })}/> {l}</label>)}</div>
+          <div className="sliders">
+          {s.subsidy_path === 'historical' && <Slider label="Historical subsidy path" hint="1.00 is the path in the netlist, 20.98 to 29.34 model units." value={s.subsidy_scale} min={0} max={10} step={.05} format={times} onChange={v => update({ subsidy_scale: v })}/>}
+          {s.subsidy_path === 'step' && <>
+            <Slider label="Subsidy before the step" value={s.subsidy_base} min={-60} max={200} step={1} format={v => num(v, 0)} onChange={v => update({ subsidy_base: v })}/>
+            <Slider label="Step size" value={s.subsidy_step} min={-100} max={100} step={1} format={v => `${v > 0 ? '+' : ''}${num(v, 0)}`} onChange={v => update({ subsidy_step: v })}/>
+            <Slider label="Step in" value={s.subsidy_step_yr} min={1997} max={2024} step={.5} format={v => num(v, 1)} onChange={v => update({ subsidy_step_yr: v })}/></>}
+          {s.subsidy_path === 'staircase' && <>
+            <Slider label="Subsidy before the phase-out" value={s.phase_from} min={0} max={200} step={1} format={v => num(v, 0)} onChange={v => update({ phase_from: v })}/>
+            <Slider label="Phase-out starts in" value={s.phase_start_yr} min={1997} max={2024} step={.5} format={v => num(v, 1)} onChange={v => update({ phase_start_yr: v })}/>
+            <Slider label="Phase-out takes" value={s.phase_years} min={.5} max={25} step={.5} format={v => `${num(v, 1)} yr`} onChange={v => update({ phase_years: v })}/>
+            <Slider label="Number of steps" value={s.phase_steps} min={1} max={40} step={1} format={v => num(v, 0)} onChange={v => update({ phase_steps: Math.round(v) })}/></>}
+          </div></>}
         </Group>
         {s.feedback && <>
         <Group title="Controller" summary={catalogue.presets[s.controller]?.label ?? 'Custom PID'} dirty={dirty(['controller', 'kp', 'ki', 'kd', 'target_growth_pct', 'reference_base', 'equilibrium_start', 'derivative_filter'])} open>
@@ -221,7 +243,7 @@ export default function App() {
   }
   return <>
     <header className="topbar"><div className="brand"><span className="mark">H</span>Housing Policy Lab</div>
-      <div className="top-actions"><span className={'mode ' + (s.feedback ? 'closed' : 'open')}>{s.feedback ? 'Feedback on' : 'Feedback off'}</span><button className="ghost" data-no-shot title="Save the whole page as a high-resolution PNG (3x)" disabled={shooting} onClick={screenshot}>{shooting ? <LoaderCircle className="spin" size={16}/> : <Camera size={16}/>} Screenshot page</button><button className="ghost" onClick={() => setLibrary(true)}><FolderOpen size={16}/> Saved <b>{saved.length}</b></button></div></header>
+      <div className="top-actions"><button className={tour ? "secondary" : "ghost"} data-no-shot title="Step by step from an empty market to feedback" disabled={busy} onClick={() => tour ? setTour(null) : goTour(0)}>{tour ? "Leave tour" : "Guided tour"}</button><span className={'mode ' + (s.feedback ? 'closed' : 'open')}>{s.feedback ? 'Feedback on' : 'Feedback off'}</span><button className="ghost" data-no-shot title="Save the whole page as a high-resolution PNG (3x)" disabled={shooting} onClick={screenshot}>{shooting ? <LoaderCircle className="spin" size={16}/> : <Camera size={16}/>} Screenshot page</button><button className="ghost" onClick={() => setLibrary(true)}><FolderOpen size={16}/> Saved <b>{saved.length}</b></button></div></header>
     <main className="workspace wide">
       {error && <div role="alert" className="notice bad">{error}<button aria-label="Dismiss" onClick={() => setError('')}><X size={15}/></button></div>}
       {notice && <div role="status" className="notice good">{notice}</div>}
@@ -229,7 +251,8 @@ export default function App() {
 
 
       {/* One canvas: scenario and policy in the left dock, analyses on the canvas and in the right dock, results below. */}
-      <div><ModelMap scenario={s} result={result} pinned={pinned} busy={busy} run={simulate} setFeedback={feedback => update({ feedback })} update={update} design={design} setDesign={setDesign} cbs={cbs} lag={lag ?? cbs?.lag_months ?? 0} cpb={cpbShown}
+      {tour && <TourBar step={tour.step} go={goTour} exit={() => setTour(null)} busy={busy}/>}
+      <div><ModelMap tour={tour ? { n: tour.n, pins: TOUR[tour.step].pins } : undefined} scenario={s} result={result} pinned={pinned} busy={busy} run={simulate} setFeedback={feedback => update({ feedback })} update={update} design={design} setDesign={setDesign} cbs={cbs} lag={lag ?? cbs?.lag_months ?? 0} cpb={cpbShown}
         left={<><div className="left-head"><div><p className="eyebrow">Disturbances d</p><h3>Economic scenario</h3></div><button className="ghost small" title="Back to the start values: every slider, switch, controller and model parameter" onClick={() => update({ ...catalogue.defaults, name: s.name })}><RotateCcw size={14}/> Reset all</button></div><p className="muted small">Scales of the historical inputs; 1.00 is the netlist path. Click a group to open it. A dot marks a group that differs from the start values. Run again to see the effect.</p>{scenarioControls}<hr/><p className="eyebrow">Reference r and controller</p><h3>Policy</h3>{policyControls}<button className="primary" disabled={busy} onClick={simulate}><Play size={15}/> Run simulation</button></>}/></div>
 
 

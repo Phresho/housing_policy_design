@@ -101,27 +101,45 @@ function StepView({ id, nominal, preview }: { id: Ident; nominal?: Ident; previe
   if (preview) data.push({ type: 'scatter', mode: 'lines', name: 'Proposed', x: [...pre, ...preview.step_years], y: [0, 0, ...preview.step], line: { color: BLUE, width: 2.6, dash: 'dash' } });
   const all = [...id.step, ...(preview?.step ?? [])], ymin = Math.min(0, ...all), ymax = Math.max(fin, ...all), span = ymax - ymin;
   const shapes: object[] = [], notes: object[] = [];
+  const labels: { x: number; y: number; text: string; color: string; prefer: string[] }[] = [];
   // Peak and trough with their times, the gap between them, and the full-adjustment bar, for one response.
   const annotate = (r: Ident, color: string, k: number) => {
+    const ink = k ? color : '#1f2a26';  // current model: green lines, black text; the proposal stays blue
     const ms = [{ ...r.peak, label: 'Peak' }, ...(r.trough ? [{ ...r.trough, label: 'Trough' }] : [])];
     data.push({ type: 'scatter', mode: 'markers', showlegend: false, x: ms.map(m => m.t), y: ms.map(m => m.y),
       marker: { size: 10, color: '#fff', line: { color: k ? BLUE : '#1f2a26', width: 2.2 } }, hoverinfo: 'skip' });
     // labels as boxes with a white background (readable over the curves): peak to the left, trough to the right,
     // current model above its markers, the proposal below
-    ms.forEach((m, i) => notes.push({ x: m.t, y: m.y, text: `${m.label} · ${fmt(m.t, 1)} yr`, showarrow: false, xanchor: i ? 'left' : 'right', yanchor: k ? 'top' : 'bottom',
-      xshift: i ? 6 : -6, yshift: k ? -6 : 6, bgcolor: 'rgba(255,255,255,0.88)', borderpad: 1, font: { color: k ? BLUE : '#1f2a26', size: 11 } }));
+    ms.forEach((m, i) => labels.push({ x: m.t, y: m.y, text: `${m.label} · ${fmt(m.t, 1)} yr`, color: k ? BLUE : '#1f2a26', prefer: k ? (i ? ['br', 'tr', 'bl', 'tl'] : ['bl', 'tl', 'br', 'tr']) : (i ? ['tr', 'br', 'tl', 'bl'] : ['tl', 'bl', 'tr', 'br']) }));
     if (r.trough) { const y = ymax + span * (0.2 + 0.14 * k);  // dimension line: peak to trough, one row per response
       shapes.push({ type: 'line', x0: r.peak.t, x1: r.trough.t, y0: y, y1: y, line: { color, width: 1.4 } },
         { type: 'line', x0: r.peak.t, x1: r.peak.t, y0: y - span * 0.025, y1: y + span * 0.025, line: { color, width: 1.4 } }, { type: 'line', x0: r.trough.t, x1: r.trough.t, y0: y - span * 0.025, y1: y + span * 0.025, line: { color, width: 1.4 } });
-      notes.push({ x: (r.peak.t + r.trough.t) / 2, y, yanchor: 'bottom', yshift: 1, text: `${fmt(r.trough.t - r.peak.t, 1)} yr`, showarrow: false, font: { color, size: 11.5 } }); }
+      notes.push({ x: (r.peak.t + r.trough.t) / 2, y, yanchor: 'bottom', yshift: 1, text: `${fmt(r.trough.t - r.peak.t, 1)} yr`, showarrow: false, font: { color: ink, size: 11.5 } }); }
     const adj = r.metrics.adjust_yr; if (!adj) return;
     const y = ymin - span * (0.12 + 0.13 * k), f = r.final ?? r.step[r.step.length - 1];
     shapes.push({ type: 'line', x0: 0, x1: adj, y0: y, y1: y, line: { color, width: 2 } }, { type: 'line', x0: adj, x1: adj, y0: y, y1: f, line: { color, width: 1, dash: 'dot' } });
-    notes.push({ x: adj, y, xanchor: 'left', xshift: 6, text: `full adjustment ≈ ${fmt(adj, 1)} yr`, showarrow: false, font: { color, size: 12.5 } });
+    notes.push({ x: adj, y, xanchor: 'left', xshift: 6, text: `full adjustment ≈ ${fmt(adj, 1)} yr`, showarrow: false, font: { color: ink, size: 12.5 } });
   };
   annotate(id, GREEN, 0); if (preview) annotate(preview, BLUE, 1);
   const adj = Math.max(id.metrics.adjust_yr ?? 0, preview?.metrics.adjust_yr ?? 0) || null;
   const lowY = ymin - span * (preview ? 0.38 : 0.24), highY = ymax + span * (preview ? 0.5 : 0.36);
+  // Place the peak/trough labels without overlap: estimate each label's box in pixels and take the first corner
+  // (top/bottom, left/right of its marker) that hits no label placed so far and no marker.
+  {
+    const x1 = Math.min(id.step_years[id.step_years.length - 1], Math.max(10, (adj ?? 5) * 2));
+    const W = Math.max(300, (box.current?.clientWidth ?? 450) - 78), H = (preview ? 400 : 340) - 10 - 98;
+    const px = (x: number) => (x + 2) / (x1 + 2) * W, py = (y: number) => (highY - y) / (highY - lowY) * H;
+    const taken: [number, number, number, number][] = labels.map(l => [px(l.x) - 7, py(l.y) - 7, px(l.x) + 7, py(l.y) + 7]);
+    const hit = (b: number[]) => taken.some(t => b[0] < t[2] && b[2] > t[0] && b[1] < t[3] && b[3] > t[1]);
+    for (const l of labels) {
+      const w = l.text.length * 6.1 + 4, h = 15, cx = px(l.x), cy = py(l.y);
+      const boxOf = (c: string) => { const left = c[1] === 'l' ? cx - 7 - w : cx + 7, top = c[0] === 't' ? cy - 7 - h : cy + 7; return [left, top, left + w, top + h]; };
+      const corner = l.prefer.find(c => !hit(boxOf(c))) ?? l.prefer[0];
+      taken.push(boxOf(corner) as [number, number, number, number]);
+      notes.push({ x: l.x, y: l.y, text: l.text, showarrow: false, xanchor: corner[1] === 'l' ? 'right' : 'left', yanchor: corner[0] === 't' ? 'bottom' : 'top',
+        xshift: corner[1] === 'l' ? -6 : 6, yshift: corner[0] === 't' ? 6 : -6, bgcolor: 'rgba(255,255,255,0.88)', borderpad: 1, font: { color: l.color, size: 11 } });
+    }
+  }
   usePlotly(box, data, {
     ...BASE, height: preview ? 400 : 340, margin: { l: 64, r: 14, t: 10, b: 98 }, legend: { orientation: 'h', y: -0.3, yanchor: 'top', entrywidth: 0.5, entrywidthmode: 'fraction', font: { size: 11 }, tracegroupgap: 0 }, shapes, annotations: notes,
     xaxis: { title: { text: 'Years after the subsidy change' }, range: [-2, Math.min(id.step_years[id.step_years.length - 1], Math.max(10, (adj ?? 5) * 2))], gridcolor: '#e8ece9', zeroline: false },
@@ -182,7 +200,7 @@ export function IdentPanel({ scenario, update }: { scenario: Scenario; update: (
         {rows.map(r => <tr key={r.name}><td><input type="checkbox" aria-label={`Allow ${r.name} to change`} checked={!!chosen?.includes(r.name)} onChange={e => setChosen(c => e.target.checked ? [...(c ?? []), r.name] : (c ?? []).filter(x => x !== r.name))}/></td>
           <td title={r.name}>{nameOf(r.name)}</td><td>{r.agent ?? ''}</td><td>{r.d_adjust_yr > 0 ? '+' : ''}{fmt(r.d_adjust_yr, 2)} yr</td><td>{r.d_cycle_yr > 0 ? '+' : ''}{fmt(r.d_cycle_yr, 2)} yr</td></tr>)}
       </tbody></table>
-      <div className="row"><button className="secondary" disabled={busy || !chosen?.length || !adjust} onClick={find}>{busy ? <><LoaderCircle className="spin" size={14}/> Fitting…</> : 'Find parameters'}</button>
+      <div className="row"><button className="secondary" disabled={busy || !chosen?.length || !adjust} onClick={find}>{busy ? <><LoaderCircle className="spin" size={14}/> Fitting…</> : 'Fit parameters'}</button>
         {changed && <button className="ghost" onClick={() => update({ param_scale: {} })}>Back to the netlist values</button>}</div>
       {preview?.design && <div className="ident-preview">
         <p><b>Proposed</b> (blue dashed above): full adjustment {fmt(preview.metrics.adjust_yr, 1)} yr (target {fmt(preview.design.target_adjust_yr, 1)}), cycle {fmt(preview.metrics.cycle_yr, 1)} yr{preview.design.target_cycle_yr ? ` (target ${fmt(preview.design.target_cycle_yr, 1)})` : ''}, long-run effect {fmt(preview.final, 3)}{preview.metrics.stable ? '' : ' · UNSTABLE'}.</p>
