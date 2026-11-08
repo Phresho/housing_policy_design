@@ -48,12 +48,16 @@ python -m pytest -q
 ```
 `ci/solver_check.py` checks, separately: the DLL loads; the initialisation at subsidies 0 and 30 (`.op`, plus the old transient for information); full open- and closed-loop runs with default and strict (`reltol=1e-4`) tolerances; price and year-on-year against `ci/reference/*.csv` (ngspice 45.2 on the Mac). Allowed difference: 0.05 index points in price and 0.05 points in year-on-year, the tolerance used against LTspice. On the Mac all differences are at most 0.0001 (the CSV rounding). Another DLL package: set the repository variables `NGSPICE_DLL_URL` and `NGSPICE_DLL_SHA256`, or start the workflow by hand with those inputs.
 
-## Hosting (Linux VM)
-Not yet tried on the VM. Expected steps:
-1. `pip install -r backend/requirements.txt`
-2. ngspice shared library: on Windows the ngspice DLL that PySpice can download (`pyspice-post-installation --install-ngspice-dll`), on Linux `sudo apt install libngspice0-dev` (Ubuntu/Debian; the `-dev` package provides `libngspice.so`), or build ngspice with `./configure --with-ngshared`. If PySpice does not find it, set `NGSPICE_LIBRARY_PATH` to the `libngspice.so` file.
-3. `cd frontend && npm ci && npm run build`
-4. `python backend/run.py --port 8001` behind the VM's web server. `python -m pytest -q tests` should pass there (the LTspice comparisons skip without LTspice).
+## Hosting (Azure VM, live since 8 Nov 2026)
+The live site runs branch `main` on the Windows Azure VM, as a Windows service on port 8002 under the path `/housing/` (port 8001 on that VM is DynaBI). Rules:
+- `frontend/src/api.ts` keeps a relative API URL (`fetch('api' + path)`), never `'/api'`; new requests go through `api()`.
+- The frontend is built with `npm run build -- --base=/housing/`; no hard-coded `/` asset paths (relative paths or `import.meta.env.BASE_URL`).
+- The service depends on the backend port, the `run.py` arguments and the environment variables `HOUSING_ENGINE`, `NGSPICE_LIBRARY_PATH`, `SPICE_LIB_DIR`, `HOUSING_DB`, `HOUSING_NGSPICE_TIMEOUT`, `HOUSING_NGSPICE_DUMP`: say so explicitly when any of them changes.
+- Before a push to `main`: tests pass locally and the Windows ngspice workflow passes (`ci/solver_check.py` PASS). Never rewrite `ci/reference` to make a check pass.
+
+Update on the VM after a push: `git pull`; if backend code or `backend/requirements.txt` changed, `python -m pip install -r backend/requirements.txt` and `python ci/solver_check.py --out ci_out` (must end with PASS); `cd frontend && npm ci && npm run build -- --base=/housing/`; restart the service. ngspice DLL set-up: see "Windows" above. On Linux the shared library comes from `sudo apt install libngspice0-dev` or `./configure --with-ngshared`; set `NGSPICE_LIBRARY_PATH` if PySpice does not find it.
+
+Local development on the Mac: `./start.sh` serves the site at http://127.0.0.1:8001.
 
 Developed with ngspice 45.2 and PySpice 1.5 (PySpice warns that 45 is "unsupported"; it works). Ubuntu ships older ngspice versions; the translation uses only basic features, but run the tests there.
 
