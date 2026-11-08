@@ -4,7 +4,7 @@ import { api } from './api';
 import { savePng } from './shot';
 import { Chart, type Line } from './Chart';
 import { ModelMap } from './ModelMap';
-import { TOUR, TourBar } from './Tour';
+import { FITTED_CBS, TOUR, TourBar } from './Tour';
 import { Robustness, type Design } from './Analysis';
 import type { Catalogue, ControllerKey, Kpis, Result, SavedRow, Scenario } from './types';
 
@@ -83,14 +83,19 @@ export default function App() {
   const goTour = (i: number) => guard(async () => {
     if (!catalogue) return;
     const next = { ...catalogue.defaults, name: `Tour ${i + 1}: ${TOUR[i].title}`, ...TOUR[i].patch } as Scenario;
-    setS(next); setPinned(null); const r = await api<Result>('/runs', next); setResult(r); setS(r.scenario);
+    if (TOUR[i].cbs) setLag(null);
+    setS(next);
+    // Steps with a comparison also run the same inputs open loop (historical subsidies), shown grey dashed.
+    const [r, open] = await Promise.all([api<Result>('/runs', next), TOUR[i].compare ? api<Result>('/runs', { ...next, feedback: false }) : Promise.resolve(null)]);
+    setPinned(open); setResult(r); setS(r.scenario);
     setTour(t => ({ step: i, n: (t?.n ?? 0) + 1 }));
   });
   // In the tour, new model parameters (Use in the simulation / Back to the netlist values) run at once, so the
   // canvas shows the new dynamics without pressing Run.
-  const paramKey = JSON.stringify(s?.param_scale ?? {});
+  const modelKey = (x?: Scenario | null) => JSON.stringify([x?.param_scale ?? {}, x?.kp, x?.ki, x?.kd, x?.derivative_filter]);
+  const paramKey = modelKey(s);
   useEffect(() => {
-    if (tour && result && !busy && paramKey !== JSON.stringify(result.scenario.param_scale ?? {})) void simulate();
+    if (tour && result && !busy && paramKey !== modelKey(result.scenario)) void simulate();
   }, [paramKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const both = () => guard(async () => {
     const [open, closed] = await Promise.all([api<Result>('/runs', { ...s, feedback: false }), api<Result>('/runs', { ...s, feedback: true })]);
@@ -141,10 +146,7 @@ export default function App() {
   const scenarioControls = <>
         <Group title="Presets" summary="Historical, no shocks, CPB, CBS fit" open>
         <div className="chips"><button onClick={() => update({ interest_scale: 1, income_scale: 1, mortgage_scale: 1, crisis_scale: 1, covid_scale: 1, income_path: 'historical', bank: true, mortgage_shift_yr: 0, interest_shift_yr: 0, inflation_pct: 0, interest_new_share: 0.1, covid_on_yr: 2.5, covid_fall_yr: 50 / 6, crisis_start_yr: 2011.46, crisis_w: false, reference_base: 80, target_growth_pct: 2.5 })}>Historical</button><button onClick={() => update({ crisis_scale: 0, covid_scale: 0 })}>No crisis or Covid shock</button><button onClick={() => update({ crisis_scale: 2, covid_scale: 1 })}>Double crisis shock</button><button onClick={() => update({ bank: false })}>Original CPB model (no bank)</button><button title="The CPB model's structure only: open loop, bank off, no crisis or Covid shock, stable income growth 1.53%, historical owner-occupied subsidy, no rental subsidy, inflation/trend 0. CPB path at its own size" onClick={() => { setShowCpb(true); setCpbScale(1); setCpbShift(0); update({ feedback: false, bank: false, crisis_scale: 0, covid_scale: 0, income_path: 'stable', income_growth_pct: 1.53, income_scale: 1, subsidy_scale: 1, rental_subsidy: false, inflation_pct: 0, mortgage_scale: 1, mortgage_shift_yr: 0, interest_scale: 1, interest_shift_yr: 0, interest_new_share: 0.1 }); }}>CPB comparison</button><button title="Claude's fit to the two CPB peaks and the level (5 Nov 2026), CPB structure, CPB path at its own size: income x0.10, historical subsidies x10, income growth 5% a year. All three at their limits. Peaks 8.7 / 7.1 (CPB 9.2 / 9.4), level 0.4 (CPB 2.2)" onClick={() => { setShowCpb(true); setCpbScale(1); setCpbShift(0); update({ feedback: false, bank: false, crisis_scale: 0, covid_scale: 0, income_path: 'stable', income_growth_pct: 5, income_scale: 0.1, subsidy_scale: 10, rental_subsidy: false, inflation_pct: 0, mortgage_scale: 1, mortgage_shift_yr: 0, interest_scale: 1, interest_shift_yr: 0, interest_new_share: 0.1 }); }}>CPB fit (peaks)</button><button title="Claude's least-squares fit to CBS (5 Nov 2026): mortgages ×4.86, 2.39 yr later; Covid shock on 1.06 yr, fading over 0.22 yr; interest rate as in the netlist rule, ×0.27; inflation/trend 4.47%; crisis shock x2 from 2011.1 (RMSE 3.33, correlation 0.88; a W-shaped crisis did not improve it). For feedback runs: reference from 120, growing 0.9% a year (Claude's choice, close to the market's own path), so the subsidy starts near 25 instead of at its -60 limit" onClick={() => { setLag(null); update({
-            // the fitted inputs
-            mortgage_scale: 4.86, mortgage_shift_yr: 2.39, interest_scale: 0.27, interest_shift_yr: 0, interest_new_share: 0.1, inflation_pct: 4.47, covid_on_yr: 1.06, covid_fall_yr: 0.22,
-            // everything else exactly as in the fit: open loop, historical subsidies and income, bank on, all shocks at x1
-            feedback: false, share_control: false, subsidy_scale: 1, rental_subsidy: true, income_path: 'historical', income_scale: 1, income_growth_pct: 1.53, bank: true, crisis_scale: 2, covid_scale: 1, crisis_start_yr: 2011.1, crisis_w: false, reference_base: 120, target_growth_pct: 0.9 }); setNotice('All inputs set to the best fit to CBS (open loop). Run the simulation to see it.'); }}>Fitted to CBS</button></div>
+ ...FITTED_CBS }); setNotice('All inputs set to the best fit to CBS (open loop). Run the simulation to see it.'); }}>Fitted to CBS</button></div>
         </Group>
         <Group title="Interest rate" summary={`× ${num(s.interest_scale)}, shift ${num(s.interest_shift_yr, 1)} yr`} dirty={dirty(['interest_scale', 'interest_new_share', 'interest_shift_yr'])}><div className="sliders">
           <Slider label="Interest rates" value={s.interest_scale} min={.25} max={3} step={.01} format={times} onChange={v => update({ interest_scale: v })}/>
@@ -258,7 +260,7 @@ export default function App() {
 
       {/* One canvas: scenario and policy in the left dock, analyses on the canvas and in the right dock, results below. */}
       {tour && <TourBar step={tour.step} go={goTour} exit={() => setTour(null)} busy={busy}/>}
-      <div><ModelMap tour={tour ? { n: tour.n, pins: TOUR[tour.step].pins, ident: TOUR[tour.step].ident } : undefined} scenario={s} result={result} pinned={pinned} busy={busy} run={simulate} setFeedback={feedback => update({ feedback })} update={update} design={design} setDesign={setDesign} cbs={cbs} lag={lag ?? cbs?.lag_months ?? 0} cpb={cpbShown}
+      <div><ModelMap tour={tour ? { n: tour.n, pins: TOUR[tour.step].pins, ident: TOUR[tour.step].ident, tuning: TOUR[tour.step].tuning, compare: TOUR[tour.step].compare, cbs: TOUR[tour.step].cbs } : undefined} scenario={s} result={result} pinned={pinned} busy={busy} run={simulate} setFeedback={feedback => update({ feedback })} update={update} design={design} setDesign={setDesign} cbs={cbs} lag={lag ?? cbs?.lag_months ?? 0} cpb={cpbShown}
         left={<><div className="left-head"><div><p className="eyebrow">Disturbances d</p><h3>Economic scenario</h3></div><button className="ghost small" title="Back to the start values: every slider, switch, controller and model parameter" onClick={() => update({ ...catalogue.defaults, name: s.name })}><RotateCcw size={14}/> Reset all</button></div><p className="muted small">Scales of the historical inputs; 1.00 is the netlist path. Click a group to open it. A dot marks a group that differs from the start values. Run again to see the effect.</p>{scenarioControls}<hr/><p className="eyebrow">Reference r and controller</p><h3>Policy</h3>{policyControls}<button className="primary" disabled={busy} onClick={simulate}><Play size={15}/> Run simulation</button></>}/></div>
 
 
