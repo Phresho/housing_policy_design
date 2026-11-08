@@ -735,7 +735,7 @@ const TOUR_CARD = { w: 700, h: 400 };  // plot cards in the guided tour, model u
 const CLOSED: View = { system: false, cpb: false, finance: false, controller: false, agents: [] };
 type TfPicks = { input?: Pick; output?: Pick };
 type MenuState = { x: number; y: number; target: Selection; label: string };
-export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, update, design, setDesign, cbs, lag, left, cpb, tour }: { tour?: { n: number; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean }; scenario: Scenario; result: Result | null; pinned: Result | null; busy: boolean; run: () => void; setFeedback: (on: boolean) => void; update: (patch: Partial<Scenario>) => void; design: Design; setDesign: (d: Design) => void; cbs?: CbsData; lag: number; left?: React.ReactNode; cpb?: { year: number[]; yoy: number[] } }) {
+export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, update, design, setDesign, cbs, lag, left, cpb, tour }: { tour?: { n: number; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean }; scenario: Scenario; result: Result | null; pinned: Result | null; busy: boolean; run: () => void; setFeedback: (on: boolean) => void; update: (patch: Partial<Scenario>) => void; design: Design; setDesign: (d: Design) => void; cbs?: CbsData; lag: number; left?: React.ReactNode; cpb?: { year: number[]; yoy: number[] } }) {
   const [leftOpen, setLeftOpen] = useState(true);
   const [map, setMap] = useState<MapData>();
   const [error, setError] = useState('');
@@ -776,7 +776,8 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   // Tour step: closed blocks, the whole model in view, and only this step's plot cards (they play with the new run).
   useEffect(() => {
     if (!tour) return;
-    setViewState(tour.tuning ? { ...CLOSED, controller: true } : CLOSED); setSelection(tour.ident ? { kind: 'ident', id: '' } : tour.tuning ? { kind: 'agent', id: 'controller' } : NONE); if (tour.ident || tour.tuning) setDock(true); setCharts(tour.cbs ? [{ id: 'cbs', kind: 'cbs' }] : []); setSensed([]); setPinPos({}); setPins(tour.pins); setFocus(f => ({ id: '', n: f.n + 1 }));
+    // expand: the Housing Market fully open, every CPB agent showing its elements (the financial sector too when the bank is on).
+    setViewState(tour.expand ? { system: true, cpb: true, finance: scenario.bank, controller: false, agents: scenario.bank ? [...CPB_AGENTS, 'bank'] : [...CPB_AGENTS] } : tour.tuning ? { ...CLOSED, controller: true } : CLOSED); setSelection(tour.ident ? { kind: 'ident', id: '' } : tour.tuning ? { kind: 'agent', id: 'controller' } : NONE); if (tour.ident || tour.tuning) setDock(true); setCharts(tour.cbs ? [{ id: 'cbs', kind: 'cbs' }] : []); setSensed([]); setPinPos({}); setPins(tour.pins); setFocus(f => ({ id: tour.expand ? 'system' : '', n: f.n + 1 }));
   }, [tour?.n]);
   const [bodeFrom, setBodeFrom] = useState<Probe | null>(null);
   const ctx = useMemo<Ctx>(() => ({ K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, feedback: scenario.feedback, settling: design.settling, overshoot: design.overshoot }), [scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.feedback, design.settling, design.overshoot]);
