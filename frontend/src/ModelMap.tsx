@@ -6,7 +6,7 @@ import { savePng } from './shot';
 import { IdentPanel } from './Ident';
 import { api } from './api';
 import { Chart, type Line } from './Chart';
-import { AgentCircuit, CONTROLLER_SIZE, ControllerCircuit, STATE_NOTE, stateOf, type GainKey } from './Schematic';
+import { AgentCircuit, CONTROLLER_SIZE, ControllerCircuit, STATE_NOTE, inputPath, stateOf, type GainKey } from './Schematic';
 import type { Element, Flow, MapData, Result, Scenario, Selection } from './types';
 import { ControllerLocus, TransferPanel, type Design, type K3, type Pick } from './Analysis';
 import { BodeBody, SensBody, YoyBody } from './Cards';
@@ -202,7 +202,7 @@ function PinTools({ children, keepOpen }: { children: React.ReactNode; keepOpen?
 // Plot cards live in their own layer, scaled with the canvas but drawn above the block headers.
 const PIN_W = 252, PIN_H = 150;
 export type StepData = { input: string; responses: Record<string, { t?: number[]; y?: number[]; error?: string }> } | null;
-function PinLayer({ map, probes, result, at, fallback, steps }: { map: MapData; probes: ProbeState; result: Result | null; at: number; fallback: Record<string, XY>; steps?: StepData }) {
+function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { map: MapData; probes: ProbeState; result: Result | null; at: number; fallback: Record<string, XY>; steps?: StepData; lines?: Record<string, Point[]> }) {
   const [tx, ty, k] = useStore(s => s.transform);
   const [live, setLive] = useState<{ id: string; x: number; y: number } | null>(null);
   const [size, setSize] = useState<Record<string, { w: number; h: number }>>({});  // card sizes in model units, kept while the canvas lives
@@ -244,7 +244,21 @@ function PinLayer({ map, probes, result, at, fallback, steps }: { map: MapData; 
   });
   const links = probes.charts.filter(c => c.kind === 'bode').flatMap(c => { if (c.kind !== 'bode') return []; const b = at_(c.id), m = { x: b.x + PIN_W / 2, y: b.y };
     return ([[c.from, 'in'], [c.to, 'out']] as const).map(([p, role]) => { const a = at_(`pin-${probeKey(p)}`); return <g key={c.id + role}><line x1={a.x + PIN_W / 2} y1={a.y + PIN_H} x2={m.x} y2={m.y} className="bode-link"/><text x={(a.x + PIN_W / 2 + m.x) / 2 + 6} y={(a.y + PIN_H + m.y) / 2} className="bode-link-label">{role}</text></g>; }); });
-  return <div className="pin-layer" style={{ transform: `translate(${tx}px, ${ty}px) scale(${k})` }} onWheel={wheel}><svg className="pin-links">{links}</svg>{charts}{probes.pins.map((p, i) => {
+  // Each card is linked to its line: a dot at the point of the line closest to the card, a dashed link to the card's edge.
+  // (Not in the guided tour: its cards sit in a row under the loop, far from their lines, and carry their titles.)
+  const leads = probes.cardSize ? [] : probes.pins.flatMap(p => {
+    const id = `pin-${probeKey(p)}`, line = lines[p.flow]; if (!line || line.length < 2) return [];
+    const pos = live?.id === id ? live : probes.pos[id] ?? fallback[id]; if (!pos) return [];
+    const S = sz(id, 'probe'), c: Point = [pos.x + S.w / 2, pos.y + S.h / 2];
+    let q: Point = line[0], best = Infinity;
+    for (let j = 1; j < line.length; j++) { const a = line[j - 1], b = line[j], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((c[0] - a[0]) * dx + (c[1] - a[1]) * dy) / l2)), m: Point = [a[0] + t * dx, a[1] + t * dy], d = Math.hypot(m[0] - c[0], m[1] - c[1]);
+      if (d < best) { best = d; q = m; } }
+    const r: Point = [Math.min(Math.max(q[0], pos.x), pos.x + S.w), Math.min(Math.max(q[1], pos.y), pos.y + S.h)];
+    if (Math.hypot(r[0] - q[0], r[1] - q[1]) < 2) return [];
+    return [<g key={'lead-' + id} className="pin-lead"><line x1={q[0]} y1={q[1]} x2={r[0]} y2={r[1]} strokeWidth={1.6 / k} strokeDasharray={`${6 / k} ${4 / k}`}/><circle cx={q[0]} cy={q[1]} r={4.5 / k}/></g>];
+  });
+  return <div className="pin-layer" style={{ transform: `translate(${tx}px, ${ty}px) scale(${k})` }} onWheel={wheel}><svg className="pin-links">{links}{leads}</svg>{charts}{probes.pins.map((p, i) => {
     const id = `pin-${probeKey(p)}`, info = probeInfo(map, p), base = probes.pos[id] ?? fallback[id] ?? { x: 0, y: i * (PIN_H + 20) }, pos = live?.id === id ? live : base;
     const y = result && info.signal ? readTrace(result, info.signal) : undefined, color = info.color;
     const st = steps && (info.step ? steps.responses[`${info.step.kind}:${info.step.id}`] : { error: 'An input: no step response' });
@@ -499,10 +513,10 @@ function evenPort(l: MapData['layouts'][string], flow: string, [W, H]: Point): {
 
 function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string) => void, scenario: Scenario, result: Result | null, at: number, selection: Selection, select: (s: Selection) => void, menu: (s: Selection, e: React.MouseEvent) => void, flip?: () => void, probes?: ProbeState, step?: (k: GainKey, up: boolean) => void, lab = 1) {
   return useMemo(() => {
-    if (!map) return { nodes: [] as Node[], edges: [] as Edge[], pinDefault: {} as Record<string, XY> };
+    if (!map) return { nodes: [] as Node[], edges: [] as Edge[], pinDefault: {} as Record<string, XY>, lines: {} as Record<string, Point[]> };
     const value = (signal: string) => result && readTrace(result, signal) ? <Val signal={signal}/> : undefined;
     const on = (s: Selection) => selection.kind === s.kind && selection.id === s.id;
-    const nodes: Node[] = [], edges: Edge[] = [], railStart: Record<string, Point> = {}, pinDefault: Record<string, XY> = {};
+    const nodes: Node[] = [], edges: Edge[] = [], railStart: Record<string, Point> = {}, pinDefault: Record<string, XY> = {}, lines: Record<string, Point[]> = {};
     const block = (id: string, r: Rect, data: Partial<BlockData>, z = 1) => nodes.push({ id, type: 'block', position: { x: r.x, y: r.y }, draggable: false, zIndex: z, data: { label: '', tone: '', width: r.w, height: r.h, ...data } });
     const sig = (id: string, points: Point[], data: Omit<SignalData, 'points'>) => edges.push({ id, source: 'anchor', target: 'anchor', type: 'signal', zIndex: 5, data: { points, lab, ...data, menu: data.target ? (e: React.MouseEvent) => menu(data.target!, e) : undefined } });
     const card = (id: string) => probes?.show ? (e?: React.MouseEvent) => { if (e) probes.show!({ flow: id, q: 's' }, e); } : undefined;
@@ -570,7 +584,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       const info: Record<string, { a: ReturnType<typeof portOf>; b: ReturnType<typeof portOf> }> = {};
       const wires: Wire[] = shown.map(f => { const [s1, t1] = ends(f), a = portOf(s1, f.id), b = portOf(t1, f.id); info[f.id] = { a, b }; return { id: f.id, P: a.p, sp: a.side, Q: b.p, channel: CHANNEL[f.id] }; });
       const paths = assignLanes(wires, channels), nth: Record<string, number> = {};
-      shown.forEach(f => { railStart[f.id] = paths[f.id][0]; });
+      shown.forEach(f => { railStart[f.id] = paths[f.id][0]; lines[f.id] = paths[f.id]; });
       shown.forEach(f => {
         const pts = paths[f.id], { a } = info[f.id], n0 = along([0, 0], [-(pts[1][1] - pts[0][1]), pts[1][0] - pts[0][0]], 1);
         const side = Math.sign(n0[0] * (a.ret[0] - a.p[0]) + n0[1] * (a.ret[1] - a.p[1])) || 1;
@@ -611,7 +625,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       block('finance', R.finance, view.finance ? { label: scenario.bank ? 'Financial sector' : 'Financial sector · off', tone: scenario.bank ? 'sub-group' : 'sub-group bank-off', open: true, tab: 'tl', toggle: () => toggle('finance') } : { label: scenario.bank ? 'Financial sector' : 'Financial sector · off', tone: scenario.bank ? 'sub-closed' : 'sub-closed bank-off', toggle: () => toggle('finance') }, view.finance ? 1 : 2);
       const agentBlock = (id: string) => {
         const open = view.agents.includes(id), a = map.agents[id];
-        block(id, R[id], open ? { label: a.label, tone: 'agent', open, tab: TAB[id], toggle: () => toggle(id), children: <AgentCircuit map={map} agent={id} scenario={scenario} selection={selection} pick={select} menu={menu} inputs={map.disturbances.filter(d => d.target === id && active(d))} inputSide={id === 'bank' ? 'top' : 'left'}/> }
+        block(id, R[id], open ? { label: a.label, tone: 'agent', open, tab: TAB[id], toggle: () => toggle(id), children: <AgentCircuit map={map} agent={id} scenario={scenario} selection={selection} pick={select} menu={menu} inputs={map.disturbances.filter(d => d.target === id && active(d))} inputSide={id === 'bank' ? 'top' : 'left'} outside/> }
           : { label: a.label, tone: 'agent', toggle: () => toggle(id), selected: on({ kind: 'agent', id }) }, 3);
       };
       if (view.cpb) CPB_AGENTS.forEach(agentBlock);
@@ -619,6 +633,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     }
     // ---- loop signals (two goals when the rental share loop is on)
     const mimo = scenario.feedback && scenario.share_control;
+    lines.y_reference = [[parl.x + parl.w, mainY], [sum.x, mainY]];
     sig('r', [[parl.x + parl.w, mainY], [sum.x, mainY]], { color: scenario.feedback ? '#2b6599' : '#b8c2bd', dashed: !scenario.feedback, markDist: (sum.x - parl.x - parl.w) / 2, letter: 'r', name: mimo ? 'Targets' : 'Housing target', sub: probes?.stepAt === 'y_reference' ? 'Unit step +1 enters here' : mimo ? 'Price & share r' : 'Reference signal r', value: value('I(Reference)'), labelSide: 'above', selected: on({ kind: 'signal', id: 'y_reference' }), pick: card('y_reference') ?? (() => select({ kind: 'signal', id: 'y_reference' })) });
     sig('e', [[sum.x + sum.w, mainY], [ctrl.x, mainY]], { color: scenario.feedback ? '#1f2a26' : '#b8c2bd', letter: 'e', name: mimo ? 'Gaps' : 'Gap', sub: mimo ? 'Errors e' : 'Error e', value: scenario.feedback ? value('I(Error)') : undefined, dashed: !scenario.feedback, labelSide: 'above', selected: on({ kind: 'signal', id: 'y_error' }), pick: card('y_error') ?? (() => select({ kind: 'signal', id: 'y_error' })) });
     const subsidy = (id: string) => map.flows.find(f => f.id === id)!;
@@ -626,7 +641,13 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       if (id === 'rental_subsidy' && !scenario.rental_subsidy) return; // switched off: no arrow
       const f = subsidy(id);
       let points: Point[] = [[ctrl.x + ctrl.w, y], [(target ?? group).x, y]];
-      if (view.system && view.cpb) { const entry = map.layouts.households.signals.find(s => s.flow === id)!.path[0], x = R.households.x + entry[0] / map.layouts.households.size[0] * R.households.w; points = [[ctrl.x + ctrl.w, y], [x, y], [x, R.households.y]]; }
+      if (view.system && view.cpb) {
+        const lay = map.layouts.households, inner = lay.signals.find(s => s.flow === id)!.path, H = R.households, x = H.x + inner[0][0] / lay.size[0] * H.w;
+        points = [[ctrl.x + ctrl.w, y], [x, y], [x, H.y]];
+        // Households open: one arrow on to the subsidy source inside (the drawing's own path, in canvas units)
+        if (view.agents.includes('households')) points.push(...inner.slice(1).map(([px, py]) => [H.x + px / lay.size[0] * H.w, H.y + py / lay.size[1] * H.h] as Point));
+      }
+      lines[id] = points;
       sig(letter, points, { color: COLOR.policy, letter, sub: probes?.stepAt === 'u_open' && id === 'owner_subsidy' ? 'Unit step +1 enters here (loop open)' : undefined, markDist: view.system ? 110 * lab : len(points[0], points[1]) / 2, name: f.label, value: value(f.signal), labelSide: i === 0 ? 'above' : 'below', selected: on({ kind: 'flow', id }) || !!probes?.pins.some(p => p.flow === id), pick: probes?.show ? (e?: React.MouseEvent) => e && probes.show!({ flow: id, q: 's' }, e) : () => select({ kind: 'flow', id }), target: { kind: 'flow', id } });
     });
     // Two measurements go into CBS (supervisor 3.4/5.1). Drawn only: the controller's price is still the construction payments.
@@ -644,9 +665,11 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       x2pts = [[sx2, src.y], [sx2, b2], [vx2, b2], [vx2, gc + xIn.b], [sensor.x, gc + xIn.b]];
     }
     const xMark = view.system && scenario.bank ? { markAt: 4, markDist: 22 + 95 * lab } : view.system ? { markDist: (sensor.x - R.cpb.x - R.cpb.w) / 2 } : {};
+    lines.x1 = x1pts; lines.x2 = x2pts;
     sig('x1', x1pts, { color: '#e0782a', letter: 'x₁', name: 'Construction payments', value: value('I(Construction_cost)'), markDist: 95 * lab, ...xMark, labelSide: 'above', selected: on({ kind: 'signal', id: 'y_price' }), pick: card('x1') ?? (() => select({ kind: 'signal', id: 'y_price' })), target: { kind: 'signal', id: 'y_price' } });
     sig('x2', x2pts, { color: COLOR.real, letter: 'x₂', name: 'New construction', value: value('I(Construction)'), markDist: 95 * lab, ...xMark, labelSide: 'below', selected: on({ kind: 'flow', id: 'houses' }), pick: card('x2') ?? (() => select({ kind: 'flow', id: 'houses' })), target: { kind: 'flow', id: 'houses' } });
     // y always leaves the sensor; the feedback branch is grey and dashed with the loop switch open.
+    lines.y_price = [[sensor.x + sensor.w, gc], [sensor.x + sensor.w + 170 * lab, gc]];
     sig('yout', [[sensor.x + sensor.w, gc], [sensor.x + sensor.w + 170 * lab, gc]], { color: LOOP, letter: 'y', name: mimo ? 'Price index & rental share' : 'House price index', sub: mimo ? 'Outputs y' : 'Output y', value: value('I(Construction_cost)'), markDist: 120, labelSide: 'above', selected: on({ kind: 'signal', id: 'y_price' }), pick: card('y_price') ?? (() => select({ kind: 'signal', id: 'y_price' })), target: { kind: 'signal', id: 'y_price' } });
     {
       const fbY = group.y + group.h + 90, tap = sensor.x + sensor.w + 60, fb = scenario.feedback;
@@ -660,15 +683,22 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     // A shock whose scale is 0 is not drawn (the bank's inputs are all zero with the bank off).
     const top = group.y - 250, firmD = map.disturbances.filter(d => d.target === 'firms' && active(d)), bankD = map.disturbances.filter(d => d.target === 'bank' && active(d));
     const nActive = map.disturbances.filter(active).length;
-    const place = (d: typeof firmD[number], side: 'left' | 'right', pts: Point[]) => sig(d.id, pts, { color: SHOCK, letter: 'd', name: d.label, sub: probes?.stepAt === d.id ? 'Unit step +1 enters here' : undefined, value: value(d.signal), markAt: 1, labelSide: side, selected: on({ kind: 'signal', id: d.id }) || !!probes?.pins.some(p => p.flow === d.id), pick: probes?.show ? (e?: React.MouseEvent) => e && probes.show!({ flow: d.id, q: 's' }, e) : () => select({ kind: 'signal', id: d.id }), target: { kind: 'signal', id: d.id } });
+    const place = (d: typeof firmD[number], side: 'left' | 'right', pts: Point[]) => (lines[d.id] = pts, sig(d.id, pts, { color: SHOCK, letter: 'd', name: d.label, sub: probes?.stepAt === d.id ? 'Unit step +1 enters here' : undefined, value: value(d.signal), markAt: 1, labelSide: side, selected: on({ kind: 'signal', id: d.id }) || !!probes?.pins.some(p => p.flow === d.id), pick: probes?.show ? (e?: React.MouseEvent) => e && probes.show!({ flow: d.id, q: 's' }, e) : () => select({ kind: 'signal', id: d.id }), target: { kind: 'signal', id: d.id } }));
     if (!view.system) {
       const x = group.x + group.w / 2;
       if (nActive) sig('shocks', [[x, top + 60], [x, group.y]], { color: SHOCK, letter: 'd', name: 'Disturbance d', sub: probes?.stepAt && probes.stepAt !== 'y_reference' ? `Unit step +1 in ${map.disturbances.find(x => x.id === probes.stepAt)?.label ?? ''}` : `Exogenous shocks & paths (${nActive})`, markAt: 1, labelSide: 'right', selected: selection.kind === 'shocks', pick: () => select({ kind: 'shocks', id: '' }) });
     } else {
-      if (view.cpb) { const F = R.firms; firmD.forEach((d, i) => { const x = group.x + 26 + i * 30, y = F.y + F.h * (i + 1) / (firmD.length + 1); place(d, 'left', [[x, top + (firmD.length - 1 - i) * 70], [x, y], [F.x, y]]); }); }
+      // An open agent: the shock arrow runs on to the element it acts on (the path the drawing used to draw dashed).
+      const into = (agent: string, side: 'left' | 'top', d: { element?: string }, i: number, n: number): Point[] => {
+        if (!view.agents.includes(agent)) return [];
+        const lay = map.layouts[agent], e = d.element ? map.elements.find(x => x.name === d.element && x.agent === agent) : undefined, A = R[agent];
+        if (!e || !e.pins || e.pins.length < 2) return [];
+        return inputPath(side, i, n, lay.size as [number, number], e.pins).slice(1).map(([px, py]) => [A.x + px / lay.size[0] * A.w, A.y + py / lay.size[1] * A.h] as Point);
+      };
+      if (view.cpb) { const F = R.firms; firmD.forEach((d, i) => { const x = group.x + 26 + i * 30, y = F.y + F.h * (i + 1) / (firmD.length + 1); place(d, 'left', [[x, top + (firmD.length - 1 - i) * 70], [x, y], [F.x, y], ...into('firms', 'left', d, i, firmD.length)]); }); }
       else firmD.forEach((d, i) => { const x = cpbRegion!.x + 40 + i * 45; place(d, 'left', [[x, top + (firmD.length - 1 - i) * 70], [x, cpbRegion!.y]]); });
       const B = view.finance ? R.bank : finRegion!;
-      bankD.forEach((d, i) => { const x = B.x + B.w * (i + 1) / (bankD.length + 1); place(d, 'right', [[x, top + i * 70], [x, B.y]]); });
+      bankD.forEach((d, i) => { const x = B.x + B.w * (i + 1) / (bankD.length + 1); place(d, 'right', [[x, top + i * 70], [x, B.y], ...(view.finance ? into('bank', 'top', d, i, bankD.length) : [])]); });
     }
     // ---- probes: pinned plots and lines to CBS
     if (probes) {
@@ -683,7 +713,6 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
         const info = probeInfo(map, p), start = railStart[p.flow], W = big?.w ?? PIN_W, H = big?.h ?? PIN_H;
         const pos = probes.pos[`pin-${probeKey(p)}`] ?? (big ? { x: parl.x + i * (big.w + 60), y: rowY } : { x: col.x, y: col.y + i * 170 });
         pinDefault[`pin-${probeKey(p)}`] = pos;
-        if (start) sig(`lead-${probeKey(p)}`, [start, [pos.x + W / 2, pos.y + H]], { color: '#6b4fa0', letter: p.q, dashed: true, markDist: 30 });
       });
       probes.sensed.forEach((p, i) => {
         const info = probeInfo(map, p), start = railStart[p.flow] ?? [group.x + group.w, group.y + group.h - 20 - 12 * i];
@@ -700,7 +729,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     }
     // After a run, dots move along every connection in the direction of the flow (supervisor 2.5).
     if (result) edges.forEach(e => { (e.data as { animate?: boolean }).animate = true; });
-    return { nodes, edges, pinDefault };
+    return { nodes, edges, pinDefault, lines };
   }, [map, view, scenario, result, selection, menu, flip, probes, step, lab]);
 }
 
@@ -737,7 +766,7 @@ function Canvas({ map, view, setView, scenario, result, at, selection, select, f
       else if (n.id === 'controller') { select({ kind: 'agent', id: 'controller' }); if (!view.controller) toggle('controller'); }
       else if (['system', 'cpb', 'finance'].includes(n.id)) { const k = n.id as 'system' | 'cpb' | 'finance'; if (!view[k]) toggle(k); }
       else if (map.agents[n.id]) { select({ kind: 'agent', id: n.id }); if (!view.agents.includes(n.id)) toggle(n.id); }
-    }}><Controls showInteractive={false}/><StickyHeaders nodes={graph.nodes as Node<BlockData>[]} lab={lab}/><PinLayer map={map} probes={withShow} result={result} at={at} fallback={graph.pinDefault} steps={steps}/></ReactFlow></AtContext.Provider>;
+    }}><Controls showInteractive={false}/><StickyHeaders nodes={graph.nodes as Node<BlockData>[]} lab={lab}/><PinLayer map={map} probes={withShow} result={result} at={at} fallback={graph.pinDefault} steps={steps} lines={graph.lines}/></ReactFlow></AtContext.Provider>;
 }
 
 const TOUR_CARD = { w: 700, h: 400 };  // plot cards in the guided tour, model units (readable at the whole-model zoom)

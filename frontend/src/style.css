@@ -328,3 +328,4 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { opac
 .tour-nav { display:flex; gap:8px; align-items:center; }
 @media (max-width: 900px) { .tour-bar { grid-template-columns:1fr; } }
 .ghost-note { color:#2F6FB5; }
+.pin-lead line { stroke:#6b4fa0; } .pin-lead circle { fill:#fff; stroke:#6b4fa0; stroke-width:2; vector-effect:non-scaling-stroke; }

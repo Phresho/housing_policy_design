@@ -61,13 +61,13 @@ const BREADBOARD = <defs><pattern id="breadboard" width="20" height="20" pattern
 
 /** Dashed arrow from where a disturbance enters the block (same spacing as the canvas arrows in ModelMap) to the
  * source element it drives. Left entry: across, then down/up to the element; top entry: down, then across. */
-function inputPath(side: 'left' | 'top', i: number, n: number, size: [number, number], pins: number[][]): number[][] {
+export function inputPath(side: 'left' | 'top', i: number, n: number, size: [number, number], pins: number[][]): number[][] {
   const [w, h] = size, cx = (pins[0][0] + pins[1][0]) / 2, cy = (pins[0][1] + pins[1][1]) / 2, gap = 38;
   if (side === 'left') { const y = h * (i + 1) / (n + 1); return Math.abs(y - cy) < gap ? [[0, y], [cx - gap, y]] : [[0, y], [cx, y], [cx, cy + (y < cy ? -gap : gap)]]; }
   const x = w * (i + 1) / (n + 1); return Math.abs(x - cx) < gap ? [[x, 0], [x, cy - gap]] : [[x, 0], [x, cy], [cx + (x < cx ? -gap : gap), cy]];
 }
 const SHOCK_RED = '#c5352a', SUBSIDY_BLUE = '#1f6fc4';
-export function AgentCircuit({ map, agent, scenario, selection, pick, menu, inputs = [], inputSide = 'left' }: { map: MapData; agent: string; scenario: Scenario; selection: Selection; pick: (s: Selection) => void; menu?: (s: Selection, ev: React.MouseEvent) => void; inputs?: { id: string; label: string; element?: string }[]; inputSide?: 'left' | 'top' }) {
+export function AgentCircuit({ map, agent, scenario, selection, pick, menu, inputs = [], inputSide = 'left', outside = false }: { outside?: boolean; map: MapData; agent: string; scenario: Scenario; selection: Selection; pick: (s: Selection) => void; menu?: (s: Selection, ev: React.MouseEvent) => void; inputs?: { id: string; label: string; element?: string }[]; inputSide?: 'left' | 'top' }) {
   const layout = map.layouts[agent], [w, h] = layout.size;
   const hidden = (e: Element) => (e.name === 'I§Owner_occupied_subsidies' && scenario.feedback) || (e.name === 'B§PID' && !scenario.feedback);
   const elements = map.elements.filter(e => e.agent === agent && !hidden(e));
@@ -79,9 +79,10 @@ export function AgentCircuit({ map, agent, scenario, selection, pick, menu, inpu
     <g className="return-wires">{[...layout.return_wires, ...layout.common_returns].map((r, i) => <path key={i} d={line(r)}/>)}{layout.dots.map(([x, y], i) => <circle key={`d${i}`} className="return-dot" cx={x} cy={y} r={5}/>)}</g>
     <g className="wires">{layout.wires.map((r, i) => <path key={i} d={line(r)}/>)}</g>
     <g className="grounds">{layout.grounds.map(([x, y], i) => <path key={i} d={`M${x - 14} ${y}H${x + 14}L${x} ${y + 16}Z`}/>)}</g>
-    {layout.signals.filter(sig => sig.flow !== 'rental_subsidy' || scenario.rental_subsidy).map(sig => <g key={sig.flow} className={`u-signal${selection.kind === 'flow' && selection.id === sig.flow ? ' selected' : ''}`} role="button" tabIndex={0} aria-label={`Control signal ${flow(sig.flow).label}`} onClick={ev => { ev.stopPropagation(); pick({ kind: 'flow', id: sig.flow }); }} onContextMenu={ev => { if (menu) { ev.preventDefault(); ev.stopPropagation(); menu({ kind: 'flow', id: sig.flow }, ev); } }}>
+    {/* outside: the canvas draws the subsidy and shock arrows straight through to the element (one unbroken arrow) */}
+    {!outside && layout.signals.filter(sig => sig.flow !== 'rental_subsidy' || scenario.rental_subsidy).map(sig => <g key={sig.flow} className={`u-signal${selection.kind === 'flow' && selection.id === sig.flow ? ' selected' : ''}`} role="button" tabIndex={0} aria-label={`Control signal ${flow(sig.flow).label}`} onClick={ev => { ev.stopPropagation(); pick({ kind: 'flow', id: sig.flow }); }} onContextMenu={ev => { if (menu) { ev.preventDefault(); ev.stopPropagation(); menu({ kind: 'flow', id: sig.flow }, ev); } }}>
       <path d={sig.path.map(([x, y], j) => `${j ? 'L' : 'M'}${x} ${y}`).join('')} markerEnd={`url(#in-${agent}-subsidy)`}/></g>)}
-    {inputs.map((d, i) => { const e = d.element ? map.elements.find(x => x.name === d.element && x.agent === agent) : undefined; if (!e || !e.pins || e.pins.length < 2) return null;
+    {!outside && inputs.map((d, i) => { const e = d.element ? map.elements.find(x => x.name === d.element && x.agent === agent) : undefined; if (!e || !e.pins || e.pins.length < 2) return null;
       const pts = inputPath(inputSide, i, inputs.length, [w, h], e.pins);
       return <g key={d.id} className={`d-input${selection.kind === 'signal' && selection.id === d.id ? ' selected' : ''}`} role="button" tabIndex={0} aria-label={`Disturbance ${d.label} enters at ${e.name}`} onClick={ev => { ev.stopPropagation(); pick({ kind: 'signal', id: d.id }); }}>
         <title>{`${d.label} enters here`}</title><path d={pts.map(([x, y], j) => `${j ? 'L' : 'M'}${x} ${y}`).join('')} markerEnd={`url(#in-${agent}-shock)`}/></g>; })}
