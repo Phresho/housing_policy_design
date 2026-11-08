@@ -12,6 +12,7 @@ The translation keeps every element, node and value. Only LTspice-specific synta
 - floating parts of the circuit (no path to ground) -> one 1 GOhm resistor to ground each
 - limit(x, a, b)   -> min(max(x, a), b)
 - Rser=r on L/C    -> separate series resistor
+- .options abstol=1e-9 chgtol=1e-10 (ABSTOL, CHGTOL): error floors for this model's scale instead of a chip's.
 - every inductor   -> plus 100 kOhm in parallel (RPAR_L). Node N019 is fed only by inductors (L10 in, the rent
   and owner-occupied branches out); trapezoidal integration then rings +-3700 V from the first step without
   decaying, and stricter builds (e.g. the Windows DLL) stop with "timestep too small". LTspice damps this itself.
@@ -28,6 +29,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+import time
 from pathlib import Path
 import numpy as np
 
@@ -36,6 +38,13 @@ _LOCAL_LIB = ROOT / "tools" / "ngspice" / "lib" / "libngspice.dylib"
 RPAR_L = 1e5  # resistor across every inductor of the netlist, see the module docstring
 RPAR_DDT = 1e3  # resistor across the inductor that builds ddt(): 1 ms filter
 TMAX = 0.05  # max time step for ngspice (LTspice averaged 0.047 s on the full run)
+# Absolute error floors (ngspice defaults abstol 1e-12 A, chgtol 1e-14 C are sized for chips). Here the PID integrators
+# (1 F) and the ddt() inductor (1 H) are fed by the gap reference - price, which is ~1e-12 round-off noise at the
+# equilibrium start. Against the default floors that noise made the time step collapse ("timestep too small" at
+# t = 1e-4 s, or crawling steps that look like a hang). Signals are O(1-1000), so 1e-9 is still strict. Tested
+# 6 Nov 2026: with these floors every CI scenario passes at reltol 1e-4 and 1e-5 and trtol 1; price changes <= 0.0001.
+ABSTOL = 1e-9
+CHGTOL = 1e-10
 _lock = threading.Lock()
 _ng = None
 
@@ -271,7 +280,7 @@ def translate(lines: list[str]) -> tuple[str, dict[str, str], float]:
     # Trapezoidal integration. The netlist asks for Gear, but with Gear ngspice's first time step stalls on this
     # circuit when the .ic integrators are present (depends on the run length). With the LTspice pulse edges (above)
     # trapezoidal gives the same results as LTspice's Gear (tests/test_ngspice.py).
-    text = "\n".join(head + out + T.extra + ics + [tran, ".options method=trap", ".end"])
+    text = "\n".join(head + out + T.extra + ics + [tran, f".options method=trap abstol={ABSTOL:g} chgtol={CHGTOL:g}", ".end"])
     # PySpice treats any output line containing "error" as a failed run, and ngspice prints vector names
     # (the signal Error -> node s_error). Rename those identifiers.
     text = re.sub("error", "gap_", text, flags=re.I)
@@ -311,7 +320,13 @@ def _shared():
             os.environ["NGSPICE_LIBRARY_PATH"] = str(_LOCAL_LIB)
         import logging
         logging.getLogger("PySpice").setLevel(logging.CRITICAL)  # "Unsupported Ngspice version": 1.5 works with 45
-        from PySpice.Spice.NgSpice.Shared import NgSpiceShared
+        from PySpice.Spice.NgSpice.Shared import NgSpiceShared, ffi
+
+        def _bg_running(is_running, ngspice_id, user_data):
+            # PySpice 1.5's callback returns None where ngspice expects an int (cffi prints a TypeError per run).
+            ffi.from_handle(user_data)._is_running = is_running
+            return 0
+        NgSpiceShared._background_thread_running = staticmethod(_bg_running)
         _ng = NgSpiceShared.new_instance()
     return _ng
 
@@ -324,19 +339,46 @@ def available() -> bool:
         return False
 
 
-def run_lines(lines: list[str]) -> dict[str, np.ndarray]:
-    """Run the netlist in ngspice; return traces under LTspice's names, time measured from the .tran start
-    (as in LTspice's .raw for this netlist)."""
-    text, names, tstart = translate(lines)
-    tstop = float(next(r for r in text.splitlines() if r.startswith(".tran")).split()[2])
+def _timeout() -> float:
+    """Seconds one ngspice run may take (HOUSING_NGSPICE_TIMEOUT, default 60). A run is 0.1-0.2 s on the Mac."""
+    return float(os.environ.get("HOUSING_NGSPICE_TIMEOUT", "60"))
+
+
+def _dump(text: str, log: list[str], why: str) -> None:
+    """With HOUSING_NGSPICE_DUMP=<folder>: keep the netlist and the ngspice log of every failed run (for CI)."""
+    folder = os.environ.get("HOUSING_NGSPICE_DUMP")
+    if not folder:
+        return
+    d = Path(folder); d.mkdir(parents=True, exist_ok=True)
+    k = len(list(d.glob("fail_*.cir")))
+    (d / f"fail_{k:03d}.cir").write_text(text)
+    (d / f"fail_{k:03d}.log").write_text(why + "\n" + "\n".join(log))
+
+
+def _run_text(text: str) -> tuple[dict[str, np.ndarray], list[str]]:
+    """Run an ngspice netlist text; all vectors of the last plot (empty if nothing was written) and the log.
+
+    The run goes to ngspice's background thread so it can be stopped: a run that takes longer than _timeout()
+    is halted (bg_halt), and the caller sees an incomplete result instead of a call that never returns."""
     with _lock:
         ng = _shared()
         api = ng._ngspice_shared
         # PySpice flags a run as failed for any stderr line not starting with "Warning:" (also ngspice's harmless
-        # "Note: ..." lines). Call the API directly and check that the run reached its end time instead.
+        # "Note: ..." lines). Call the API directly and check the result instead.
         ng.clear_output()
         ng.load_circuit(text)
-        api.ngSpice_Command(b"run")
+        limit, t0 = _timeout(), time.monotonic()
+        api.ngSpice_Command(b"bg_run")
+        time.sleep(0.002)
+        timed_out = False
+        while api.ngSpice_running():
+            if time.monotonic() - t0 > limit:
+                api.ngSpice_Command(b"bg_halt")
+                while api.ngSpice_running():
+                    time.sleep(0.01)
+                timed_out = True
+                break
+            time.sleep(0.002)
         vec = {}
         try:
             plot = ng.plot(simulation=None, plot_name=ng.last_plot)
@@ -344,15 +386,19 @@ def run_lines(lines: list[str]) -> dict[str, np.ndarray]:
         except Exception:
             pass
         log = [l for l in ng._stderr if "Note:" not in l][-6:]
+        if timed_out:
+            log.append(f"stopped after {limit:g} s (HOUSING_NGSPICE_TIMEOUT)")
         api.ngSpice_Command(b"destroy all")
         api.ngSpice_Command(b"remcirc")
-    if "time" not in vec or vec["time"].size == 0 or vec["time"][-1] < tstop - 1e-6:
-        raise RuntimeError("ngspice did not finish the run: " + " | ".join(log))
-    t = vec["time"]
-    traces = {"time": t - tstart}
+    return vec, log
+
+
+def _traces(vec: dict[str, np.ndarray], names: dict[str, str], n: int) -> dict[str, np.ndarray]:
+    """ngspice vectors under LTspice's trace names (see translate)."""
+    traces = {}
     for trace, v in names.items():
         if v == "zero":
-            traces[trace] = np.zeros_like(t); continue
+            traces[trace] = np.zeros(n); continue
         key = v.lower()
         if key.startswith("i(") and key not in vec:
             key = key[2:-1] + "#branch"
@@ -363,3 +409,56 @@ def run_lines(lines: list[str]) -> dict[str, np.ndarray]:
         if k != "time" and "#" not in k and not k.startswith(("x", "s_")) and not k.endswith(("_s", "_sr")):
             traces[f"V({k})"] = v
     return traces
+
+
+def run_lines(lines: list[str]) -> dict[str, np.ndarray]:
+    """Run the netlist in ngspice; return traces under LTspice's names, time measured from the .tran start
+    (as in LTspice's .raw for this netlist)."""
+    text, names, tstart = translate(lines)
+    tstop = float(next(r for r in text.splitlines() if r.startswith(".tran")).split()[2])
+    vec, log = _run_text(text)
+    if "time" not in vec or vec["time"].size == 0 or vec["time"][-1] < tstop - 1e-6:
+        reached = f" (reached t = {vec['time'][-1]:.6g} of {tstop:g})" if vec.get("time") is not None and vec["time"].size else ""
+        msg = "ngspice did not finish the run" + reached + ": " + " | ".join(log)
+        _dump(text, log, msg)
+        raise RuntimeError(msg)
+    t = vec["time"]
+    traces = {"time": t - tstart}
+    traces.update(_traces(vec, names, t.size))
+    return traces
+
+
+def op_text(text: str) -> str:
+    """The translated netlist as a DC operating-point analysis (.op) instead of the transient.
+
+    The transient starts from this same operating point: capacitors open, inductors shorted, every source at its
+    t = 0 value, and the integrator states held at their .ic start values. .op ignores .ic, so each held integrator
+    node gets a voltage source at its start value instead (what ngspice does with .ic before a transient)."""
+    out = []
+    for l in text.splitlines():
+        if l.startswith(".ic "):
+            out += [f"V{k}hold {k} 0 {v}" for k, v in re.findall(r"v\((\w+)\)=(\S+)", l)]
+        elif l.startswith(".tran"):
+            out.append(".op")
+        else:
+            out.append(l)
+    return "\n".join(out)
+
+
+def operating_point(lines: list[str]) -> dict[str, float]:
+    """Every trace at circuit time 0 (the DC operating point), under LTspice's names. No time steps, so none of
+    the transient's step-size failures; equal to the first point of run_lines within 2e-8 (6 Nov 2026)."""
+    text, names, _ = translate(lines)
+    text = op_text(text)
+    vec, log = _run_text(text)
+    try:
+        traces = _traces(vec, names, 1)
+    except KeyError:
+        msg = "ngspice found no operating point: " + " | ".join(log)
+        _dump(text, log, msg)
+        raise RuntimeError(msg) from None
+    out = {k: float(np.asarray(v).ravel()[0]) for k, v in traces.items()}
+    if not all(np.isfinite(list(out.values()))):
+        _dump(text, log, "operating point not finite")
+        raise RuntimeError("ngspice operating point is not finite: " + " | ".join(log))
+    return out

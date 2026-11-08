@@ -26,9 +26,27 @@ After front-end edits: `cd frontend && npm run build` with the env's Node on PAT
 - `idt()` as a current into 1 F with `.ic`; `delay()` as an ideal transmission line; `ddt()` as a current through 1 H.
 - Trapezoidal integration (the netlist asks for Gear; with Gear ngspice's first time step stalls on this circuit).
 - 100 kOhm across every inductor, and 1 kOhm across the inductor that builds `ddt()` (a 1 ms filter). Node N019 is fed only by inductors, and the `ddt()` inductor only by a current source; trapezoidal integration rings there from the first step without decaying. The Mac build tolerated it, the Windows ngspice DLL on the VM stopped with "timestep too small" (6 Nov 2026). Effect on the price 0.0001 (1 kOhm and 10 kOhm still failed some runs); `tests/test_ngspice.py::test_runs_with_strict_tolerances` runs with tighter tolerances to catch it.
+- Error floors `abstol=1e-9`, `chgtol=1e-10` instead of ngspice's chip-sized defaults (1e-12, 1e-14). At the equilibrium start the gap reference - price is round-off noise (~1e-12) and feeds the PID integrators (1 F) and the `ddt()` inductor; against the default floors the time step collapsed at t = 1e-4 s ("timestep too small", or crawling steps that look like a hang). With the floors every check scenario passes at `reltol` 1e-4 and 1e-5 and `trtol` 1; price changes at most 0.0001.
+- The equilibrium-start initialisation (`scenario._start_price`, subsidy fixed at 0 and 30, secant search for the subsidy that puts the price on the reference) is a DC operating point (`.op`, `ngspice.operating_point`) instead of a 0.01 s transient: the closed-loop transient starts from exactly that operating point, so no time steps are needed. Integrator start values (`.ic`) are held by voltage sources there. Equal to the old transient value within 2e-8, 4 ms per call.
+- Each ngspice run is stopped after `HOUSING_NGSPICE_TIMEOUT` seconds (default 60) with an error instead of blocking. `HOUSING_NGSPICE_DUMP=<folder>` keeps the netlist and log of every failed run.
 - The B4 linearisation point (2015, non-linear B4 with gain -10) is stored in `scenario.B4_POINT`, because ngspice cannot run the non-linear B4 with gain -10. A test recomputes it with LTspice.
 
 Validation against LTspice (`tests/test_ngspice.py`, and 150 random slider settings on 5 Nov 2026): price within 0.05 (median 0.016%), year-on-year within 0.05 points, for open loop, H-infinity, ZN, the netlist PID, no bank, the fitted CBS inputs and the rental-share loop. ngspice is 3-5x faster (0.1-0.2 s a run). Unstable gains (for example a large unfiltered D) give chaotic saturated runs, where the two solvers differ after the first instability.
+
+## Windows (tested in GitHub Actions)
+`.github/workflows/windows-ngspice.yml` runs on Windows Server 2022 x64 with Python 3.13 and the official ngspice 45.2 DLL. The same steps by hand (PowerShell, repository root):
+```
+python -m pip install -r backend/requirements.txt
+curl.exe -fsSL -o ngspice.7z https://sourceforge.net/projects/ngspice/files/ng-spice-rework/old-releases/45.2/ngspice-45.2_dll_64.7z/download
+(Get-FileHash -Algorithm SHA256 ngspice.7z).Hash   # FF110EBB04367EB37FF3C88C75AB3BEA1B2191C11EFCE78F264C2CA73034762B
+7z x ngspice.7z -oC:\ngspice                       # gives C:\ngspice\Spice64_dll\...
+$env:NGSPICE_LIBRARY_PATH = "C:\ngspice\Spice64_dll\dll-vs\ngspice.dll"
+$env:SPICE_LIB_DIR = "C:\ngspice\Spice64_dll\share\ngspice"
+$env:HOUSING_ENGINE = "ngspice"
+python ci/solver_check.py --out ci_out             # PASS/FAIL per stage; ci_out/results.json, CSVs, failed netlists
+python -m pytest -q
+```
+`ci/solver_check.py` checks, separately: the DLL loads; the initialisation at subsidies 0 and 30 (`.op`, plus the old transient for information); full open- and closed-loop runs with default and strict (`reltol=1e-4`) tolerances; price and year-on-year against `ci/reference/*.csv` (ngspice 45.2 on the Mac). Allowed difference: 0.05 index points in price and 0.05 points in year-on-year, the tolerance used against LTspice. On the Mac all differences are at most 0.0001 (the CSV rounding). Another DLL package: set the repository variables `NGSPICE_DLL_URL` and `NGSPICE_DLL_SHA256`, or start the workflow by hand with those inputs.
 
 ## Hosting (Linux VM)
 Not yet tried on the VM. Expected steps:

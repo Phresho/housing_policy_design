@@ -60,12 +60,17 @@ def test_stored_b4_point_is_the_ltspice_value():
 
 
 @needs_ng
-@pytest.mark.parametrize("options", [".options reltol=1e-4"])  # trtol=1 (7 is the default) still stops H-inf/ZN
-@pytest.mark.parametrize("s", [Scenario(), Scenario(feedback=True, controller="hinf"), Scenario(feedback=True, controller="zn")],
-                         ids=["open", "hinf", "zn"])
+@pytest.mark.parametrize("options", [".options reltol=1e-4", ".options reltol=1e-5", ".options reltol=1e-4 trtol=1"])
+@pytest.mark.parametrize("s", [Scenario(), Scenario(feedback=True, controller="hinf"), Scenario(feedback=True, controller="zn"),
+                               Scenario(feedback=True, controller="netlist"),
+                               Scenario(feedback=True, controller="zn", bank=False, rental_subsidy=False),
+                               Scenario(feedback=True, controller="hinf", share_control=True)],
+                         ids=["open", "hinf", "zn", "netlist-pid", "nobank-zn", "hinf-share"])
 def test_runs_with_strict_tolerances(monkeypatch, s, options):
-    """Stricter settings than the default reproduce the 'timestep too small' stop seen with the Windows ngspice DLL
-    (trapezoidal ringing at the inductor-only node N019). The parallel resistors on the inductors prevent it."""
+    """Stricter settings than the default reproduce the 'timestep too small' stops seen with the Windows ngspice DLL:
+    trapezoidal ringing at the inductor-only node N019 (fixed by the parallel resistors on the inductors), and at the
+    equilibrium start round-off noise in the PID's integrators against ngspice's chip-sized error floors (fixed by
+    ABSTOL/CHGTOL; without them netlist-pid, nobank-zn and hinf-share stopped at t = 1e-4 s with reltol 1e-4)."""
     translate = ng.translate
     def strict(lines):
         text, names, tstart = translate(lines)
@@ -78,8 +83,35 @@ def test_runs_with_strict_tolerances(monkeypatch, s, options):
 
 @needs_ng
 @pytest.mark.parametrize("options", ["", ".options reltol=1e-4"])
-@pytest.mark.parametrize("s", [Scenario(bank=False), Scenario(bank=False, controller="zn", rental_subsidy=False)],
-                         ids=["nobank", "nobank-norent"])
+@pytest.mark.parametrize("s", [Scenario(bank=False), Scenario(feedback=True, bank=False, controller="zn", rental_subsidy=False)],
+                         ids=["nobank", "nobank-zn-norent"])
 def test_no_bank_runs_finish(monkeypatch, s, options):
     """With 1 kOhm across the inductors these stopped at t = 178 (random-settings check, 6 Nov 2026)."""
     test_runs_with_strict_tolerances(monkeypatch, s, options or ".options reltol=1e-3")
+
+
+@needs_ng
+@pytest.mark.parametrize("s", [Scenario(controller="hinf"), Scenario(bank=False, controller="zn", rental_subsidy=False),
+                               Scenario(interest_scale=1.8, income_path="stable")], ids=["hinf", "nobank-zn", "rate"])
+@pytest.mark.parametrize("u", [0.0, 30.0, -40.0])
+def test_operating_point_is_the_transient_start(s, u):
+    """The equilibrium start uses a .op analysis (no time steps). It must equal the first point of the transient.
+    The transient here uses the run's own step settings (0.01 s step); the old 0.01 s initialisation transient
+    (.tran 0 0.01 0 0.005) hung on the Windows DLL for nobank-zn at u = 30 (GitHub Actions, 6 Nov 2026)."""
+    lines = build(s.model_copy(update={"feedback": False, "share_control": False}))
+    nl.set_constant_subsidy(lines, u)
+    op = ng.operating_point(lines)["I(Construction_cost)"]
+    nl.set_tran(lines, ".tran 0.01 1 0")
+    tran = ng.run_lines(lines)["I(Construction_cost)"][0]
+    assert abs(op - tran) < 1e-6
+
+
+@needs_ng
+def test_run_timeout_stops_and_recovers(monkeypatch):
+    """A run longer than HOUSING_NGSPICE_TIMEOUT is halted with an error; the next run works again."""
+    lines = build(Scenario(feedback=False))
+    monkeypatch.setenv("HOUSING_NGSPICE_TIMEOUT", "0.02")
+    with pytest.raises(RuntimeError, match="HOUSING_NGSPICE_TIMEOUT"):
+        ng.run_lines(lines)
+    monkeypatch.setenv("HOUSING_NGSPICE_TIMEOUT", "60")
+    assert np.isfinite(ng.run_lines(lines)["I(Construction_cost)"][-1])
