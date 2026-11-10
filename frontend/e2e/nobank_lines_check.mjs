@@ -7,6 +7,7 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, de
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
 await page.goto('http://127.0.0.1:8001/');
 await page.getByRole('button', { name: 'Guided tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 }); await page.waitForTimeout(3000);
+await page.getByRole('button', { name: /^Step 2:/ }).click(); await page.locator('.tour-steps button.on', { hasText: '2' }).waitFor({ timeout: 120000 }); await page.waitForTimeout(4000);
 await page.locator('.map-canvas').screenshot({ path: out + '/nobank_open.png', timeout: 30000 });
 await page.getByRole('button', { name: 'Leave tour' }).click();
 await page.getByRole('button', { name: 'Original CPB model (no bank)' }).click();

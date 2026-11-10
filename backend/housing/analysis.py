@@ -93,6 +93,46 @@ def sens(K, filtered: bool = True, G=None):
     return S, lp * S, k * S
 
 
+def nyquist(K, filtered: bool = True) -> dict:
+    """Nyquist plot of the loop L(jw) = C(jw) G(jw) (subsidy PID times market, price loop), with the classical
+    margins. Gain margin: 1/|L| where the phase crosses -180 deg (L on the negative real axis); phase margin:
+    180 deg + arg L where |L| = 1. Crossings are interpolated on the frequency grid L.W (rad/year); with several
+    crossings the smallest margin counts. Ms = max |S|: 1/Ms is the closest distance of L to -1."""
+    w = L.W
+    G = loop()["G"]
+    Lw = ctrl(K, w, filtered) * G
+    mag, ph = np.abs(Lw), np.unwrap(np.angle(Lw))
+    gms, pms = [], []
+    for i in range(len(w) - 1):
+        # phase crossing -180 deg (any multiple of 360 below it): Im L changes sign with Re L < 0
+        a, b = Lw[i], Lw[i + 1]
+        if a.imag == 0 or np.sign(a.imag) != np.sign(b.imag):
+            t = a.imag / (a.imag - b.imag) if a.imag != b.imag else 0.0
+            re = a.real + t * (b.real - a.real)
+            if re < 0:
+                wc = float(np.exp(np.log(w[i]) + t * (np.log(w[i + 1]) - np.log(w[i]))))
+                gms.append({"gm": float(1 / -re), "w": wc, "re": float(re)})
+        # gain crossing |L| = 1
+        if (mag[i] - 1) * (mag[i + 1] - 1) < 0:
+            t = (1 - mag[i]) / (mag[i + 1] - mag[i])
+            phi = ph[i] + t * (ph[i + 1] - ph[i])
+            pm = (np.degrees(phi) + 180) % 360
+            pm = pm - 360 if pm > 180 else pm
+            wc = float(np.exp(np.log(w[i]) + t * (np.log(w[i + 1]) - np.log(w[i]))))
+            pms.append({"pm": float(pm), "w": wc, "phi": float(phi)})
+    gm = min(gms, key=lambda g: g["gm"]) if gms else None
+    pm = min(pms, key=lambda q: abs(q["pm"])) if pms else None
+    stable = bool(np.all(closed_loop_poles(K, filtered).real < 0))
+    cyc = lambda x: round(2 * np.pi / x, 3)
+    return {
+        "re": [round(float(v), 5) for v in Lw.real], "im": [round(float(v), 5) for v in Lw.imag],
+        "cycle_yr": [cyc(x) for x in w],
+        "gm": None if gm is None else {"ratio": round(gm["gm"], 4), "db": round(float(20 * np.log10(gm["gm"])), 2), "cycle_yr": cyc(gm["w"]), "re": round(gm["re"], 5)},
+        "pm": None if pm is None else {"deg": round(pm["pm"], 2), "cycle_yr": cyc(pm["w"]), "re": round(float(np.cos(pm["phi"])), 5), "im": round(float(np.sin(pm["phi"])), 5)},
+        "ms": round(float(np.max(np.abs(1 / (1 + Lw)))), 4), "stable": stable,
+    }
+
+
 @lru_cache(maxsize=1)
 def ultimate():
     """P-only: the gain where a pole pair reaches the imaginary axis (Ku) and its cycle (Pu)."""

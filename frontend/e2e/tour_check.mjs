@@ -7,7 +7,7 @@ const errors = []; page.on('pageerror', e => errors.push(String(e)));
 for (let i = 0; i < 40; i++) { try { await page.goto('http://127.0.0.1:8001/'); break; } catch { await page.waitForTimeout(500); } }
 await page.getByRole('button', { name: 'Guided tour' }).click();
 const steps = [];
-for (let i = 0; i < 9; i++) {
+for (let i = 0; i < 10; i++) {
   if (i) await page.getByRole('button', { name: /Next/ }).click();
   await page.locator('.tour-steps button.on', { hasText: String(i + 1) }).waitFor({ timeout: 120000 });
   await page.waitForTimeout(8500);

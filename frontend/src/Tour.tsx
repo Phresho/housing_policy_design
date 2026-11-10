@@ -12,9 +12,11 @@ export const FITTED_CBS: Partial<Scenario> = { mortgage_scale: 4.86, mortgage_sh
 const GROWTH: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 0.3, income_scale: 1 };
 const FLAT: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 0, income_scale: 1 };
 const STEP: Partial<Scenario> = { subsidy_path: 'step', subsidy_base: 0, subsidy_step: 10, subsidy_step_yr: 2005 };
-export type TourStep = { title: string; text: string; patch: Partial<Scenario>; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean };
+export type TourStep = { title: string; text: string; patch: Partial<Scenario>; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean; formulas?: boolean };
 const price: Probe = { flow: 'y_price', q: 's' }, subsidy: Probe = { flow: 'owner_subsidy', q: 's' }, income: Probe = { flow: 'd_income', q: 's' }, yoy: Probe = { flow: 'y_yoy', q: 's' };
 export const TOUR: TourStep[] = [
+  { title: 'The backbone: the CPB model', text: 'The circuit is built on the CPB housing-market model (Groot & Möhlmann, 2020): the four quadrants of DiPasquale and Wheaton. Each agent carries its CPB equations (numbers refer to the CPB document). The subsidy rates s_k and s_h are the Tax Authority’s inputs.',
+    patch: { ...QUIET, ...FLAT, subsidy_scale: 0 }, pins: [], formulas: true },
   { title: 'An empty market', text: 'The whole market opened up: the four CPB agents with all their elements. No shocks, no subsidy, constant income, no bank (the CPB model). Nothing pushes the market: the price stays where it is.',
     patch: { ...QUIET, ...FLAT, subsidy_scale: 0 }, pins: [price], expand: true },
   { title: 'One step on the governor', text: 'The Tax Authority raises the subsidy once, from 0 to 10 in 2005; nothing else moves. The price overshoots, turns and settles: the market’s own dynamics. Right: its poles and step response. Change the full adjustment or the cycle there to see other dynamics on the canvas.',

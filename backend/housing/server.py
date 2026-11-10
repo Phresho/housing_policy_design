@@ -194,6 +194,10 @@ def create_app(database: Path | None = None) -> FastAPI:
     def analysis_evaluate(r: EvaluateRequest):
         return analysis.evaluate(r.gains(), r.filtered, r.settling_yr, r.overshoot_pct, r.min_cycle_yr)
 
+    @app.post("/api/analysis/nyquist")
+    def analysis_nyquist(r: Gains):
+        return analysis.nyquist(r.gains(), r.filtered)
+
     @app.post("/api/analysis/transfer")
     def analysis_transfer(r: TransferRequest):
         try:

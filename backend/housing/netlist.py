@@ -273,6 +273,20 @@ def set_crisis_pwl(lines: list[str], pulses: list[tuple[float, float, float, flo
     lines[i] = _sub_exact(lines[i], CRISIS_PULSE, f"PWL({pts})")
 
 
+LOANS_PULSE = "PULSE(30 10 70 0 10 30 10000)"  # lending to firms: 30, down to 10 from 70 s (LTspice: zero rise = 10% of on = 3 s)
+
+
+def set_loans_pwl(lines: list[str], pulses: list[tuple[float, float, float, float, float]], base: float = 30.0) -> None:
+    """Lending shock (I8) as base plus the sum of trapezoids (delay, amp, rise, fall, on) in simulation seconds,
+    written as one PWL on the same source. Used for the W-shaped crisis on the lending side."""
+    corners = {0.0}
+    for delay, _, rise, fall, on in pulses:
+        corners |= {delay, delay + rise, delay + rise + on, delay + rise + on + fall}
+    pts = " ".join(f"{t:.6g} {base + sum(_trapezoid(t, *q) for q in pulses):.6g}" for t in sorted(corners))
+    i = _index(lines, "I8 0 N008 ")
+    lines[i] = _sub_exact(lines[i], LOANS_PULSE, f"PWL({pts})")
+
+
 def scale_elements(lines: list[str], scale: dict[str, float]) -> None:
     """Multiply the value of R, L and C elements by name, e.g. {"C2": 1.3} (model parameters for the
     system-identification design). Keeps any Rser=... after the value."""

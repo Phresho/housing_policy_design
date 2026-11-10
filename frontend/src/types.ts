@@ -19,4 +19,4 @@ export interface Element { name: string; a: string; b: string; value: string; st
 export interface Layout { size: [number, number]; wires: number[][]; return_wires: number[][]; common_returns: number[][]; dots: number[][]; grounds: number[][]; signals: { flow: string; path: number[][] }[]; ports: Record<string, number[]>; returns: Record<string, number[]>; not_drawn: string[] }
 export interface ControllerLayout { size: [number, number]; paths: number[][][]; sums: number[][]; labels: [number, number, string][]; not_drawn: string[] }
 export interface MapData { agents: Record<string, { label: string; summary: string; description: string }>; controller: { label: string; description: string }; flows: Flow[]; disturbances: Signal[]; outputs: Signal[]; elements: Element[]; layouts: Record<string, Layout>; controller_layout: ControllerLayout }
-export type Selection = { kind: 'flow' | 'signal' | 'element' | 'agent' | 'sensor' | 'shocks' | 'tf' | 'probe' | 'ident' | 'none'; id: string };
+export type Selection = { kind: 'flow' | 'signal' | 'element' | 'agent' | 'sensor' | 'shocks' | 'tf' | 'probe' | 'ident' | 'robust' | 'none'; id: string };

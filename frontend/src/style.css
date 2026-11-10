@@ -329,3 +329,19 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { opac
 @media (max-width: 900px) { .tour-bar { grid-template-columns:1fr; } }
 .ghost-note { color:#2F6FB5; }
 .pin-lead line { stroke:#6b4fa0; } .pin-lead circle { fill:#fff; stroke:#6b4fa0; stroke-width:2; vector-effect:non-scaling-stroke; }
+.robust-docked .robust-grid { display:flex; flex-direction:column; gap:10px; }
+.robust-docked .panel { padding:12px; margin:0 0 10px; box-shadow:none; } .robust-docked h2 { font-size:17px; } .robust-docked .kpis.three { grid-template-columns:1fr; }
+.robust-docked .mc-row { flex-wrap:wrap; }
+.nyquist { margin-top:14px; } .nyquist p.small { font-size:13px; }
+.map-node.agent.with-formulas .block-body { display:block; padding:6px 14px 10px; overflow:hidden; }
+.formulas { display:flex; flex-direction:column; gap:10px; font-family:'Cambria Math','STIX Two Math','Times New Roman',serif; color:#1f2a26; }
+.formulas .eq { background:#fffaf0; border:1.5px solid #d9c9a3; border-radius:8px; padding:7px 10px; }
+.formulas .eq-title { font-family:Inter,system-ui,sans-serif; font-size:13px; font-weight:700; color:#6b4a1f; } .formulas .eq-no { font-weight:400; color:#8a7a5a; }
+.formulas .eq-body { font-size:19px; margin:3px 0 2px; white-space:nowrap; } .formulas .eq-note { font-family:Inter,system-ui,sans-serif; font-size:11.5px; color:#5f6b67; }
+.formulas .frac { display:inline-flex; flex-direction:column; vertical-align:middle; text-align:center; margin:0 3px; } .formulas .frac > span:first-child { border-bottom:1.5px solid #1f2a26; padding:0 3px; } .formulas .frac > span { font-size:16px; line-height:1.2; }
+.formulas .eq-body { line-height:1.9; } .formulas .eq-body:has(.frac) { padding:4px 0; }
+.formulas .eq-body { line-height:1.4; } .formulas .eq-body:has(.frac) { padding:6px 0 4px; }
+.formulas .frac { display:inline-flex; flex-direction:column; align-items:center; vertical-align:-0.95em; line-height:1.25; margin:0 4px; }
+.formulas .frac > span { display:block; font-size:16px; padding:1px 4px; border:0; }
+.formulas .frac > span:first-child { border-bottom:1.5px solid #1f2a26; }
+.formulas .frac { vertical-align:middle; } .formulas .eq-body:has(.frac) { padding:10px 0 8px; line-height:1; }

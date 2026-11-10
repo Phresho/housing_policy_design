@@ -6,6 +6,7 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, de
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
 await page.goto('http://127.0.0.1:8001/');
 await page.getByRole('button', { name: 'Guided tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 }); await page.waitForTimeout(4000);
+await page.getByRole('button', { name: /^Step 2:/ }).click(); await page.locator('.tour-steps button.on', { hasText: '2' }).waitFor({ timeout: 120000 }); await page.waitForTimeout(4000);
 await page.locator('.map-canvas').screenshot({ path: out + '/tour_expand.png', timeout: 30000 });
 console.log(JSON.stringify({ nodes: await page.evaluate(() => [...document.querySelectorAll('.react-flow__node')].map(n => n.getAttribute('data-id')).join(',')), errors }));
 process.exit(0);

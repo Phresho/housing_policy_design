@@ -33,3 +33,24 @@ def test_step_shows_at_its_year():
     r = sc.run(Scenario(subsidy_path="step", subsidy_base=0, subsidy_step=10, subsidy_step_yr=2005, bank=False))
     y, u = np.array(r["year"]), np.array(r["series"]["owner_subsidy"])
     assert abs(y[np.argmax(u > 5)] - 2005) < 0.11
+
+
+def test_w_crisis_reaches_the_lending_shock():
+    """W-shaped crisis: the lending shock (I8) gets the extra early dip and its main dip moves to the crisis start."""
+    lines = sc.build(Scenario(crisis_w=True))
+    i8 = next(l for l in lines if l.startswith("I8 0 N008 "))
+    assert "PWL(" in i8 and "PULSE" not in i8
+    plain = next(l for l in sc.build(Scenario()) if l.startswith("I8 0 N008 "))
+    assert "PULSE(30 10 70" in plain
+    assert next(l for l in sc.build(Scenario(crisis_w=True, bank=False)) if l.startswith("I8 0 N008 ")) == "I8 0 N008 0"
+
+
+def test_nyquist_margins():
+    """H-inf PID: comfortable margins; Ziegler-Nichols: close to -1 (thesis story)."""
+    from housing import analysis as an
+    h = an.nyquist((1.131, 0.666, 2.839), True)
+    z = an.nyquist((8.18, 3.54, 4.72), True)
+    assert h["stable"] and z["stable"]
+    assert h["gm"]["ratio"] > 3 and h["pm"]["deg"] > 45 and h["ms"] < 2
+    assert z["gm"]["ratio"] < 1.5 and z["pm"]["deg"] < 20 and z["ms"] > 5
+    assert len(h["re"]) == len(h["im"]) == len(h["cycle_yr"])

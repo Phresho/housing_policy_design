@@ -79,6 +79,9 @@ class Scenario(BaseModel):
     crisis_scale: float = Field(1.0, ge=0, le=2)
     crisis_start_yr: float = Field(YEAR_AT_RAW_ZERO + 15.0, ge=2000, le=2020)  # netlist: 90 s = 2011.46
     # W-shaped crisis: an extra, earlier dip added to the netlist pulse (Claude's addition, 5 Nov 2026).
+    # From 10 Nov 2026 it applies to both crisis shocks: firms (V§Shock_financialcrisis) and lending (I8). The lending
+    # shock then has the same two waves: the extra dip at crisis_w_start_yr (depth crisis_w_scale x its own drop of
+    # 20) and its netlist dip (30 -> 10, 5 years) moved to crisis_start_yr. Claude's choice, so both W's line up.
     # Its shape: 1-year rise, crisis_w_on_yr at full depth, 1-year recovery. Depth relative to the main pulse (-50).
     crisis_w: bool = False
     crisis_w_start_yr: float = Field(2008.0, ge=2000, le=2020)
@@ -206,6 +209,9 @@ def build(s: Scenario, b4: Literal["linear", "nonlinear", "original"] = "linear"
         w_delay = round((s.crisis_w_start_yr - YEAR_AT_RAW_ZERO) * SECONDS_PER_YEAR, 6)
         nl.set_crisis_pwl(lines, [(crisis_delay, -50 * s.crisis_scale, 10, 20, 35),
                                   (w_delay, -50 * s.crisis_scale * s.crisis_w_scale, SECONDS_PER_YEAR, SECONDS_PER_YEAR, s.crisis_w_on_yr * SECONDS_PER_YEAR)])
+        if s.bank:
+            nl.set_loans_pwl(lines, [(crisis_delay, -20.0, 3.0, 10.0, 30.0),
+                                     (w_delay, -20.0 * s.crisis_w_scale, SECONDS_PER_YEAR, SECONDS_PER_YEAR, s.crisis_w_on_yr * SECONDS_PER_YEAR)])
     else:
         nl.set_crisis_start(lines, crisis_delay)
         nl.set_pulse_amplitude(lines, "V§Shock_financialcrisis ", "PULSE(00 -50", s.crisis_scale)
