@@ -10,7 +10,7 @@ import { AgentCircuit, CONTROLLER_SIZE, ControllerCircuit, STATE_NOTE, inputPath
 import type { Element, Flow, MapData, Result, Scenario, Selection } from './types';
 import { ControllerLocus, Robustness, TransferPanel, type Design, type K3, type Pick } from './Analysis';
 import { NyquistPanel } from './Nyquist';
-import { AgentFormulas } from './Formulas';
+import { FormulaCards, FORMULAS, STRIP_BOTTOM, STRIP_H, type Formula } from './Formulas';
 import { BodeBody, SensBody, YoyBody } from './Cards';
 
 type Point = [number, number];
@@ -504,7 +504,9 @@ const CPB_PORTS: Record<string, { p: Point; side: Side }> = {
 };
 // Collapsed agents all have one size; the financial sector is as tall as the collapsed CPB box,
 // so its four left ports line up with the CPB's four right ports.
-const AGENT_BOX: Point = [250, 160], FIN_BOX: Point = [250, 230], FORMULA_BOX: Point = [600, 380];
+const AGENT_BOX: Point = [250, 160], FIN_BOX: Point = [250, 230];
+// Closed agents in the CPB backbone view: room for their equation cards (canvas units)
+const FORMULA_BOX: Record<string, Point> = { constructors: [600, 190], investors: [600, 230], households: [600, 360] };
 /** Port of a collapsed block: ports keep their side and order from the drawing, evenly spaced along that side. */
 function evenPort(l: MapData['layouts'][string], flow: string, [W, H]: Point): { p: Point; side: Side; ret: Point } {
   const [w, h] = l.size, sideOf = ([x, y]: number[]): Side => x === 0 ? 'L' : x === w ? 'R' : y === 0 ? 'T' : 'B';
@@ -515,7 +517,7 @@ function evenPort(l: MapData['layouts'][string], flow: string, [W, H]: Point): {
   return { p, side, ret: vertical ? [p[0], p[1] + 12 * sign] : [p[0] + 12 * sign, p[1]] };
 }
 
-function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string) => void, scenario: Scenario, result: Result | null, at: number, selection: Selection, select: (s: Selection) => void, menu: (s: Selection, e: React.MouseEvent) => void, flip?: () => void, probes?: ProbeState, step?: (k: GainKey, up: boolean) => void, lab = 1) {
+function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string) => void, scenario: Scenario, result: Result | null, at: number, selection: Selection, select: (s: Selection) => void, menu: (s: Selection, e: React.MouseEvent) => void, flip?: () => void, probes?: ProbeState, step?: (k: GainKey, up: boolean) => void, lab = 1, hl: Formula | null = null, setHl: (f: Formula | null) => void = () => undefined) {
   return useMemo(() => {
     if (!map) return { nodes: [] as Node[], edges: [] as Edge[], pinDefault: {} as Record<string, XY>, lines: {} as Record<string, Point[]> };
     const value = (signal: string) => result && readTrace(result, signal) ? <Val signal={signal}/> : undefined;
@@ -527,17 +529,22 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     const GX = 640, GY = 300;
     const R: Record<string, Rect> = {}, scale: Record<string, number> = {};
     // CPB backbone view (tour): closed agents are larger and carry their CPB equations
-    const AB: Point = view.formulas ? FORMULA_BOX : AGENT_BOX;
+    const withEq = (id: string) => !!view.formulas && !!FORMULAS[id];
+    const AB = (id: string): Point => withEq(id) ? FORMULA_BOX[id] ?? AGENT_BOX : AGENT_BOX;
+    // Opened agent in the CPB backbone view: its formula strip sits above the circuit (strip(id) canvas units).
+    const strip = (id: string) => withEq(id) && view.agents.includes(id) ? STRIP_H[id] ?? 0 : 0;
+    const stripTop = (id: string) => STRIP_BOTTOM.has(id) ? 0 : strip(id);  // offset of the circuit inside the block
+    const lit = (flow: string) => !!hl?.flows.includes(flow);
     const shift = (dx: number, dy: number, ids: string[]) => ids.forEach(i => { R[i].x += dx; R[i].y += dy; });
-    const sized = (id: string) => { const open = view.agents.includes(id), [w, h] = map.layouts[id].size; scale[id] = open ? SCALE.expanded : 0; R[id] = open ? { x: 0, y: 0, w: w * SCALE.expanded, h: h * SCALE.expanded } : { x: 0, y: 0, w: AB[0], h: AB[1] }; };
+    const sized = (id: string) => { const open = view.agents.includes(id), [w, h] = map.layouts[id].size; scale[id] = open ? SCALE.expanded : 0; R[id] = open ? { x: 0, y: 0, w: w * SCALE.expanded, h: h * SCALE.expanded + strip(id) } : { x: 0, y: 0, w: AB(id)[0], h: AB(id)[1] }; };
     // Port of a flow on a block: agent (from its drawing), collapsed CPB box, or collapsed financial sector (drawn like Bank).
     const portOf = (node: string, flow: string): { p: Point; side: Side; ret: Point } => {
       const r = R[node];
       if (node === 'cpb') { const c = CPB_PORTS[flow]; const p: Point = [r.x + c.p[0], r.y + c.p[1]]; return { p, side: c.side, ret: c.side === 'R' ? [p[0], p[1] + 12] : [p[0] + 12, p[1]] }; }
       const l = map.layouts[node === 'finance' ? 'bank' : node], [w, h] = l.size, s = scale[node] ?? 0;
-      if (!s) { const e = evenPort(l, flow, node === 'finance' ? FIN_BOX : AB); return { p: [r.x + e.p[0], r.y + e.p[1]], side: e.side, ret: [r.x + e.ret[0], r.y + e.ret[1]] }; }
-      const [x, y] = l.ports[flow], [rx, ry] = l.returns[flow];
-      return { p: [r.x + x * s, r.y + y * s], side: x === 0 ? 'L' : x === w ? 'R' : y === 0 ? 'T' : 'B', ret: [r.x + rx * s, r.y + ry * s] };
+      if (!s) { const e = evenPort(l, flow, node === 'finance' ? FIN_BOX : AB(node)); return { p: [r.x + e.p[0], r.y + e.p[1]], side: e.side, ret: [r.x + e.ret[0], r.y + e.ret[1]] }; }
+      const [x, y] = l.ports[flow], [rx, ry] = l.returns[flow], top = r.y + stripTop(node);
+      return { p: [r.x + x * s, top + y * s], side: x === 0 ? 'L' : x === w ? 'R' : y === 0 ? 'T' : 'B', ret: [r.x + rx * s, top + ry * s] };
     };
     let group: Rect = { x: GX, y: GY, w: 250, h: 150 }, cpbRegion: Rect | null = null, finRegion: Rect | null = null;
     const g12 = 340, rowGap = 340, g23 = 340, framePad = 34;
@@ -595,7 +602,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
         const pts = paths[f.id], { a } = info[f.id], n0 = along([0, 0], [-(pts[1][1] - pts[0][1]), pts[1][0] - pts[0][0]], 1);
         const side = Math.sign(n0[0] * (a.ret[0] - a.p[0]) + n0[1] * (a.ret[1] - a.p[1])) || 1;
         nth[CHANNEL[f.id]] = (nth[CHANNEL[f.id]] ?? -1) + 1;
-        edges.push({ id: f.id, source: 'anchor', target: 'anchor', type: 'rail', zIndex: 4, data: { points: pts, side, color: COLOR[f.kind], name: f.short, value: value(f.signal), labelT: nth[CHANNEL[f.id]] % 2 ? .7 : .3, selected: on({ kind: 'flow', id: f.id }), pick: f.port && probes?.show ? (e?: React.MouseEvent) => e && probes.show!({ flow: f.id, q: 'f' }, e) : () => select({ kind: 'flow', id: f.id }), menu: (e: React.MouseEvent) => menu({ kind: 'flow', id: f.id }, e), probe: f.port && probes?.show ? (q: 'e' | 'f', e: React.MouseEvent) => probes.show!({ flow: f.id, q }, e) : undefined, probed: (['e', 'f'] as const).filter(q => on({ kind: 'probe', id: `${f.id}:${q}` }) || !!probes?.pins.some(p => p.flow === f.id && p.q === q) || !!probes?.sensed.some(p => p.flow === f.id && p.q === q)) } });
+        edges.push({ id: f.id, source: 'anchor', target: 'anchor', type: 'rail', zIndex: 4, data: { points: pts, side, color: COLOR[f.kind], name: f.short, value: value(f.signal), labelT: nth[CHANNEL[f.id]] % 2 ? .7 : .3, selected: on({ kind: 'flow', id: f.id }) || lit(f.id), pick: f.port && probes?.show ? (e?: React.MouseEvent) => e && probes.show!({ flow: f.id, q: 'f' }, e) : () => select({ kind: 'flow', id: f.id }), menu: (e: React.MouseEvent) => menu({ kind: 'flow', id: f.id }, e), probe: f.port && probes?.show ? (q: 'e' | 'f', e: React.MouseEvent) => probes.show!({ flow: f.id, q }, e) : undefined, probed: (['e', 'f'] as const).filter(q => on({ kind: 'probe', id: `${f.id}:${q}` }) || !!probes?.pins.some(p => p.flow === f.id && p.q === q) || !!probes?.sensed.some(p => p.flow === f.id && p.q === q)) } });
       });
     }
     const gc = group.y + group.h / 2;
@@ -631,8 +638,14 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       block('finance', R.finance, view.finance ? { label: scenario.bank ? 'Financial sector' : 'Financial sector · off', tone: scenario.bank ? 'sub-group' : 'sub-group bank-off', open: true, tab: 'tl', toggle: () => toggle('finance') } : { label: scenario.bank ? 'Financial sector' : 'Financial sector · off', tone: scenario.bank ? 'sub-closed' : 'sub-closed bank-off', toggle: () => toggle('finance') }, view.finance ? 1 : 2);
       const agentBlock = (id: string) => {
         const open = view.agents.includes(id), a = map.agents[id];
-        block(id, R[id], open ? { label: a.label, tone: 'agent', open, tab: TAB[id], toggle: () => toggle(id), children: <AgentCircuit map={map} agent={id} scenario={scenario} selection={selection} pick={select} menu={menu} inputs={map.disturbances.filter(d => d.target === id && active(d))} inputSide={id === 'bank' ? 'top' : 'left'} outside/> }
-          : { label: a.label, tone: view.formulas ? 'agent with-formulas' : 'agent', toggle: () => toggle(id), selected: on({ kind: 'agent', id }), children: view.formulas ? <AgentFormulas agent={id}/> : undefined }, 3);
+        const circuit = <AgentCircuit map={map} agent={id} scenario={scenario} selection={selection} pick={select} menu={menu} inputs={map.disturbances.filter(d => d.target === id && active(d))} inputSide={id === 'bank' ? 'top' : 'left'} outside highlight={hl?.elements}/>;
+        const cards = withEq(id) ? <FormulaCards agent={id} active={hl?.id ?? null} pick={setHl}/> : undefined;
+        const sh = strip(id);
+        block(id, R[id], open ? { label: a.label, tone: 'agent', open, tab: TAB[id], toggle: () => toggle(id),
+            children: sh ? (STRIP_BOTTOM.has(id)
+              ? <><div className="circuit-below" style={{ top: 0, bottom: `${sh / R[id].h * 100}%` }}>{circuit}</div><div className="formula-strip bottom" style={{ top: 'auto', bottom: 0, height: `${sh / R[id].h * 100}%` }}>{cards}</div></>
+              : <><div className="formula-strip" style={{ height: `${sh / R[id].h * 100}%` }}>{cards}</div><div className="circuit-below" style={{ top: `${sh / R[id].h * 100}%` }}>{circuit}</div></>) : circuit }
+          : { label: a.label, tone: withEq(id) ? 'agent with-formulas' : 'agent', toggle: () => toggle(id), selected: on({ kind: 'agent', id }), children: cards }, 3);
       };
       if (view.cpb) CPB_AGENTS.forEach(agentBlock);
       if (view.finance) agentBlock('bank');
@@ -648,13 +661,13 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       const f = subsidy(id);
       let points: Point[] = [[ctrl.x + ctrl.w, y], [(target ?? group).x, y]];
       if (view.system && view.cpb) {
-        const lay = map.layouts.households, inner = lay.signals.find(s => s.flow === id)!.path, H = R.households, x = H.x + inner[0][0] / lay.size[0] * H.w;
-        points = [[ctrl.x + ctrl.w, y], [x, y], [x, H.y]];
+        const lay = map.layouts.households, inner = lay.signals.find(s => s.flow === id)!.path, H0 = R.households, sh = strip('households'), H = { ...H0, y: H0.y + stripTop('households'), h: H0.h - sh }, x = H.x + inner[0][0] / lay.size[0] * H.w;
+        points = [[ctrl.x + ctrl.w, y], [x, y], [x, H0.y]];
         // Households open: one arrow on to the subsidy source inside (the drawing's own path, in canvas units)
         if (view.agents.includes('households')) points.push(...inner.slice(1).map(([px, py]) => [H.x + px / lay.size[0] * H.w, H.y + py / lay.size[1] * H.h] as Point));
       }
       lines[id] = points;
-      sig(letter, points, { color: COLOR.policy, letter, sub: probes?.stepAt === 'u_open' && id === 'owner_subsidy' ? 'Unit step +1 enters here (loop open)' : undefined, markDist: view.system ? 110 * lab : len(points[0], points[1]) / 2, name: f.label, value: value(f.signal), labelSide: i === 0 ? 'above' : 'below', selected: on({ kind: 'flow', id }) || !!probes?.pins.some(p => p.flow === id), pick: probes?.show ? (e?: React.MouseEvent) => e && probes.show!({ flow: id, q: 's' }, e) : () => select({ kind: 'flow', id }), target: { kind: 'flow', id } });
+      sig(letter, points, { color: COLOR.policy, letter, sub: probes?.stepAt === 'u_open' && id === 'owner_subsidy' ? 'Unit step +1 enters here (loop open)' : undefined, markDist: view.system ? 110 * lab : len(points[0], points[1]) / 2, name: f.label, value: value(f.signal), labelSide: i === 0 ? 'above' : 'below', selected: on({ kind: 'flow', id }) || !!probes?.pins.some(p => p.flow === id) || lit(id), pick: probes?.show ? (e?: React.MouseEvent) => e && probes.show!({ flow: id, q: 's' }, e) : () => select({ kind: 'flow', id }), target: { kind: 'flow', id } });
     });
     // Two measurements go into CBS (supervisor 3.4/5.1). Drawn only: the controller's price is still the construction payments.
     // Housing Market open: both lines start where they are measured (Investors, or the CPB box when it is closed),
@@ -697,7 +710,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       // An open agent: the shock arrow runs on to the element it acts on (the path the drawing used to draw dashed).
       const into = (agent: string, side: 'left' | 'top', d: { element?: string }, i: number, n: number): Point[] => {
         if (!view.agents.includes(agent)) return [];
-        const lay = map.layouts[agent], e = d.element ? map.elements.find(x => x.name === d.element && x.agent === agent) : undefined, A = R[agent];
+        const lay = map.layouts[agent], e = d.element ? map.elements.find(x => x.name === d.element && x.agent === agent) : undefined, A0 = R[agent], A = { ...A0, y: A0.y + stripTop(agent), h: A0.h - strip(agent) };
         if (!e || !e.pins || e.pins.length < 2) return [];
         return inputPath(side, i, n, lay.size as [number, number], e.pins).slice(1).map(([px, py]) => [A.x + px / lay.size[0] * A.w, A.y + py / lay.size[1] * A.h] as Point);
       };
@@ -736,7 +749,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     // After a run, dots move along every connection in the direction of the flow (supervisor 2.5).
     if (result) edges.forEach(e => { (e.data as { animate?: boolean }).animate = true; });
     return { nodes, edges, pinDefault, lines };
-  }, [map, view, scenario, result, selection, menu, flip, probes, step, lab]);
+  }, [map, view, scenario, result, selection, menu, flip, probes, step, lab, hl]);
 }
 
 function Canvas({ map, view, setView, scenario, result, at, selection, select, focus, menu, flip, probes, step, steps, lab = 1 }: { lab?: number; map: MapData; view: View; setView: (v: View) => void; scenario: Scenario; result: Result | null; at: number; selection: Selection; select: (s: Selection) => void; focus: { id: string; n: number }; menu: (s: Selection, e: React.MouseEvent) => void; flip: () => void; probes: ProbeState; step: (k: GainKey, up: boolean) => void; steps?: StepData }) {
@@ -750,7 +763,10 @@ function Canvas({ map, view, setView, scenario, result, at, selection, select, f
     else setView({ ...view, agents: view.agents.includes(k) ? view.agents.filter(a => a !== k) : [...view.agents, k] });
   };
   const withShow = useMemo<ProbeState>(() => ({ ...probes, show: (p, e) => { const at = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY }); probes.place(p, { x: at.x - PIN_W / 2, y: at.y - PIN_H - 14 }); } }), [probes, flow]);
-  const graph = useModelGraph(map, view, toggle, scenario, result, at, selection, select, menu, flip, withShow, step, lab);
+  // A clicked CPB equation (backbone view) lights up the flows and elements it describes.
+  const [hl, setHl] = useState<Formula | null>(null);
+  useEffect(() => { if (!view.formulas) setHl(null); }, [view.formulas]);
+  const graph = useModelGraph(map, view, toggle, scenario, result, at, selection, select, menu, flip, withShow, step, lab, hl, setHl);
   const shown = graph.nodes;
   useEffect(() => {
     const id = focus.id;

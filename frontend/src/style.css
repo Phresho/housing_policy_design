@@ -106,7 +106,7 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { opac
 .map-node .toggle { position:absolute; top:4px; right:4px; display:grid; place-items:center; width:20px; height:20px; padding:0; border:1px solid #8c8473; border-radius:4px; background:#fff; color:#3a3a3a; }
 .map-node.open { display:block; cursor:default; } .map-node.open .toggle { position:static; }
 .node-tab { position:absolute; display:flex; align-items:center; gap:6px; padding:2px 6px; background:rgba(255,255,255,.92); border:1px solid #8c8473; border-radius:4px; font-size:12px; z-index:2; } .node-tab.tl { top:6px; left:6px; } .node-tab.br { bottom:6px; right:6px; } .node-tab.bl { bottom:6px; left:6px; }
-.map-node.agent { background:#f2e8d6; border:1.4px solid #8c7a55; border-radius:3px; box-shadow:0 1px 3px rgba(0,0,0,.12); } .map-node.agent strong { font-size:13px; color:#3d2f12; } .map-node.agent span { font-size:10px; color:#6b5a3a; } .map-node.agent:not(.open):hover { box-shadow:0 2px 9px rgba(0,0,0,.25); } .map-node.agent.selected { box-shadow:0 0 0 2.5px #3f9a1f; }
+.map-node.agent { background:#f2e8d6; border:1.4px solid #8c7a55; border-radius:3px; box-shadow:0 1px 3px rgba(0,0,0,.12); } .map-node.agent strong { font-size:13px; color:#3d2f12; } .map-node.agent > .block-body > span { font-size:10px; color:#6b5a3a; } .map-node.agent:not(.open):hover { box-shadow:0 2px 9px rgba(0,0,0,.25); } .map-node.agent.selected { box-shadow:0 0 0 2.5px #3f9a1f; }
 .map-node.agent.open { background:#f6efe2; } .map-node .circuit.embedded { display:block; width:100%; height:100%; background:transparent; }
 .map-node.system-closed { background:#ee8a2c; border:2px solid #1b1b1b; border-radius:16px; color:#fff; padding:10px; } .map-node.system-closed strong { font-size:18px; } .map-node.system-closed span { font-size:13px; }
 .map-node.system-group { background:rgba(253,240,224,.55); border:1.6px solid #e0a35a; border-radius:6px; } .map-node.system-group .node-tab { background:#f7d8b3; border-color:#e0a35a; font-size:13px; }
@@ -157,7 +157,7 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { opac
 .verdict { padding:9px 12px; border-radius:8px; font-weight:600; font-size:13.5px; } .verdict.good { background:#e3f3e7; color:#1f6b38; } .verdict.warn { background:#fff3dc; color:#7a5200; } .verdict.bad { background:#fde3e1; color:#9b2a22; }
 .spec-inputs { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; } .spec-inputs label { font-size:12.5px; color:#3c4a45; display:flex; flex-direction:column; gap:4px; } .spec-inputs span { display:flex; align-items:center; gap:6px; } .spec-inputs input { width:72px; padding:5px 7px; border:1px solid #c8d1cc; border-radius:6px; font:inherit; }
 .tune { margin:12px 0 4px; display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
-.lights { display:grid; gap:5px; } .light { display:flex; align-items:center; gap:8px; font-size:12.5px; } .light b { margin-left:auto; font-variant-numeric:tabular-nums; } .light span { width:11px; height:11px; border-radius:50%; flex:none; } .light.ok span { background:#1F8A4C; } .light.bad span { background:#c8281e; }
+.lights { display:grid; gap:5px; } .light:not(.react-flow) { display:flex; align-items:center; gap:8px; font-size:12.5px; } .light:not(.react-flow) b { margin-left:auto; font-variant-numeric:tabular-nums; } .light:not(.react-flow) span { width:11px; height:11px; border-radius:50%; flex:none; } .light:not(.react-flow).ok span { background:#1F8A4C; } .light:not(.react-flow).bad span { background:#c8281e; }
 .select { display:flex; flex-direction:column; font-size:12.5px; gap:4px; } .select select { padding:6px 8px; border-radius:6px; border:1px solid #c8d1cc; font:inherit; }
 
 /* ---------- robustness */
@@ -345,3 +345,15 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { opac
 .formulas .frac > span { display:block; font-size:16px; padding:1px 4px; border:0; }
 .formulas .frac > span:first-child { border-bottom:1.5px solid #1f2a26; }
 .formulas .frac { vertical-align:middle; } .formulas .eq-body:has(.frac) { padding:10px 0 8px; line-height:1; }
+
+/* CPB equations (KaTeX) on the agents: clickable cards; strip above an opened agent's circuit */
+.formulas { display:flex; flex-direction:column; gap:8px; width:100%; }
+.formulas .eq { box-sizing:border-box; display:block; text-align:center; width:100%; cursor:pointer; background:#fffaf0; border:1.5px solid #d9c9a3; border-radius:8px; padding:6px 10px; color:#1f2a26; font-family:Inter,system-ui,sans-serif; }
+.formulas .eq:hover { border-color:#b08d4a; } .formulas .eq.on { border-color:#2b6599; box-shadow:0 0 0 3px rgba(43,101,153,.25); background:#f3f8fd; }
+.formulas .eq .eq-title { font-size:13px; font-weight:700; color:#6b4a1f; } .formulas .eq .eq-no { font-weight:400; color:#8a7a5a; font-size:12px; }
+.formulas .eq .eq-body { font-size:15px; color:#1f2a26; line-height:normal; padding:0; } .formulas .eq .eq-body .katex-display { margin:2px 0; }
+.formulas .eq .eq-note { font-size:11px; color:#5f6b67; text-align:center; }
+.formula-strip { position:absolute; left:0; right:0; top:0; padding:calc(30px * var(--lab, 1) + 8px) 10px 4px; box-sizing:border-box; overflow:hidden; z-index:2; display:flex; align-items:flex-start; }
+.circuit-below { position:absolute; left:0; right:0; bottom:0; }
+.formulas .eq > div { display:block; width:100%; } .formulas .eq .eq-title { white-space:nowrap; } .formulas .eq .eq-note { white-space:normal; }
+.formula-strip.bottom { padding:8px 10px; border-top:1px dashed #c9b88f; }

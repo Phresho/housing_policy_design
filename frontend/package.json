@@ -11,12 +11,14 @@
   "dependencies": {
     "@xyflow/react": "^12.8.5",
     "html-to-image": "1.11.11",
+    "katex": "0.16.11",
     "lucide-react": "0.468.0",
     "plotly.js-dist-min": "3.1.0",
     "react": "19.1.1",
     "react-dom": "19.1.1"
   },
   "devDependencies": {
+    "@types/katex": "0.16.7",
     "@types/react": "19.1.13",
     "@types/react-dom": "19.1.9",
     "@vitejs/plugin-react": "5.0.3",

@@ -67,7 +67,7 @@ export function inputPath(side: 'left' | 'top', i: number, n: number, size: [num
   const x = w * (i + 1) / (n + 1); return Math.abs(x - cx) < gap ? [[x, 0], [x, cy - gap]] : [[x, 0], [x, cy], [cx + (x < cx ? -gap : gap), cy]];
 }
 const SHOCK_RED = '#c5352a', SUBSIDY_BLUE = '#1f6fc4';
-export function AgentCircuit({ map, agent, scenario, selection, pick, menu, inputs = [], inputSide = 'left', outside = false }: { outside?: boolean; map: MapData; agent: string; scenario: Scenario; selection: Selection; pick: (s: Selection) => void; menu?: (s: Selection, ev: React.MouseEvent) => void; inputs?: { id: string; label: string; element?: string }[]; inputSide?: 'left' | 'top' }) {
+export function AgentCircuit({ map, agent, scenario, selection, pick, menu, inputs = [], inputSide = 'left', outside = false, highlight = [] }: { outside?: boolean; highlight?: string[]; map: MapData; agent: string; scenario: Scenario; selection: Selection; pick: (s: Selection) => void; menu?: (s: Selection, ev: React.MouseEvent) => void; inputs?: { id: string; label: string; element?: string }[]; inputSide?: 'left' | 'top' }) {
   const layout = map.layouts[agent], [w, h] = layout.size;
   const hidden = (e: Element) => (e.name === 'I§Owner_occupied_subsidies' && scenario.feedback) || (e.name === 'B§PID' && !scenario.feedback);
   const elements = map.elements.filter(e => e.agent === agent && !hidden(e));
@@ -86,7 +86,7 @@ export function AgentCircuit({ map, agent, scenario, selection, pick, menu, inpu
       const pts = inputPath(inputSide, i, inputs.length, [w, h], e.pins);
       return <g key={d.id} className={`d-input${selection.kind === 'signal' && selection.id === d.id ? ' selected' : ''}`} role="button" tabIndex={0} aria-label={`Disturbance ${d.label} enters at ${e.name}`} onClick={ev => { ev.stopPropagation(); pick({ kind: 'signal', id: d.id }); }}>
         <title>{`${d.label} enters here`}</title><path d={pts.map(([x, y], j) => `${j ? 'L' : 'M'}${x} ${y}`).join('')} markerEnd={`url(#in-${agent}-shock)`}/></g>; })}
-    {elements.map(e => <ElementView key={e.name} e={e} state={stateOf(e, scenario)} selected={selection.kind === 'element' && selection.id === e.name} pick={() => pick({ kind: 'element', id: e.name })} menu={menu && (ev => menu({ kind: 'element', id: e.name }, ev))}/>)}
+    {elements.map(e => <ElementView key={e.name} e={e} state={stateOf(e, scenario)} selected={(selection.kind === 'element' && selection.id === e.name) || highlight.includes(e.name)} pick={() => pick({ kind: 'element', id: e.name })} menu={menu && (ev => menu({ kind: 'element', id: e.name }, ev))}/>)}
   </svg>;
 }
 
