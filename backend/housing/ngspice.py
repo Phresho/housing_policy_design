@@ -46,6 +46,7 @@ TMAX = 0.05  # max time step for ngspice (LTspice averaged 0.047 s on the full r
 ABSTOL = 1e-9
 CHGTOL = 1e-10
 _lock = threading.Lock()
+_bg_done = threading.Event()  # set by ngspice when its background thread has finished a run
 _ng = None
 
 
@@ -322,9 +323,13 @@ def _shared():
         logging.getLogger("PySpice").setLevel(logging.CRITICAL)  # "Unsupported Ngspice version": 1.5 works with 45
         from PySpice.Spice.NgSpice.Shared import NgSpiceShared, ffi
 
-        def _bg_running(is_running, ngspice_id, user_data):
-            # PySpice 1.5's callback returns None where ngspice expects an int (cffi prints a TypeError per run).
-            ffi.from_handle(user_data)._is_running = is_running
+        def _bg_running(exited, ngspice_id, user_data):
+            # ngspice calls this with fl_exited: False when its background thread starts, True when it has finished
+            # (sharedspice.c, _thread_run). PySpice 1.5 names the flag "is_running" and returns None where ngspice
+            # expects an int (cffi printed a TypeError per run).
+            ffi.from_handle(user_data)._is_running = not exited
+            if exited:
+                _bg_done.set()
             return 0
         NgSpiceShared._background_thread_running = staticmethod(_bg_running)
         _ng = NgSpiceShared.new_instance()
@@ -367,18 +372,16 @@ def _run_text(text: str) -> tuple[dict[str, np.ndarray], list[str]]:
         # "Note: ..." lines). Call the API directly and check the result instead.
         ng.clear_output()
         ng.load_circuit(text)
-        limit, t0 = _timeout(), time.monotonic()
+        limit = _timeout()
+        # Wait for ngspice's own end-of-run signal. Polling ngSpice_running() right after bg_run raced on Windows: the
+        # thread had not started yet, the results were read before the run, and the still-running thread then
+        # corrupted the next circuit (random 'did not finish' and missing vectors in GitHub Actions, 10 Nov 2026).
+        _bg_done.clear()
         api.ngSpice_Command(b"bg_run")
-        time.sleep(0.002)
-        timed_out = False
-        while api.ngSpice_running():
-            if time.monotonic() - t0 > limit:
-                api.ngSpice_Command(b"bg_halt")
-                while api.ngSpice_running():
-                    time.sleep(0.01)
-                timed_out = True
-                break
-            time.sleep(0.002)
+        timed_out = not _bg_done.wait(limit)
+        if timed_out:
+            api.ngSpice_Command(b"bg_halt")
+            _bg_done.wait(30)
         vec = {}
         try:
             plot = ng.plot(simulation=None, plot_name=ng.last_plot)
