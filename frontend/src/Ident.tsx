@@ -38,7 +38,9 @@ function PoleMap({ id, nominal, preview, path }: { id: Ident; nominal?: Ident; p
   const pathDom = (path ?? []).map(st => st.dominant).filter((d): d is [number, number] => !!d);
   const xmin = Math.min(-2.5, ...(dom ? [dom.re * 2.2] : []), ...pathDom.map(d => d[0] * 1.25));
   const shown = (p: IdPole) => p.re >= xmin;
-  const ims = [...id.poles.filter(shown).map(p => Math.abs(p.im)), ...pathDom.map(d => d[1])], ymax = Math.max(1, ...ims) * 1.25;
+  // every pole drawn fits: current, proposed, and the dots of the path between them
+  const trailIm = (path ?? []).flatMap(st => st.poles.filter(q => q[0] >= xmin).map(q => Math.abs(q[1])));
+  const ims = [...id.poles.filter(shown).map(p => Math.abs(p.im)), ...pathDom.map(d => d[1]), ...trailIm, ...(preview?.poles.filter(shown).map(p => Math.abs(p.im)) ?? [])], ymax = Math.max(1, ...ims) * 1.15;
   // cycle ticks at least ymax/7 apart, so the long cycles near the axis do not pile up
   const cyc = [1, 1.5, 2, 3, 5, 10, 20].filter(c => 2 * Math.PI / c <= ymax).filter((c, i, a) => i === 0 || 2 * Math.PI / a[i - 1] - 2 * Math.PI / c >= ymax / 7);
   const ticks = [...cyc.map(c => 2 * Math.PI / c), 0, ...cyc.map(c => -2 * Math.PI / c)];
@@ -152,7 +154,7 @@ export function IdentPanel({ scenario, update, onPreview, auto }: { scenario: Sc
   // Bank off (original CPB model): the linear model leaves the bank out too (NO_BANK marker, analysis.NO_BANK).
   const own = scenario.param_scale ?? {}, nb: Record<string, number> = scenario.bank ? {} : { NO_BANK: 0 };
   const applied = { ...own, ...nb }, changed = Object.keys(own).length > 0;
-  const [id, setId] = useState<Ident>(); const [nominal, setNominal] = useState<Ident>(); const [error, setError] = useState('');
+  const [id, setId] = useState<Ident>(); const [error, setError] = useState('');
   const [sens, setSens] = useState<SensRow[]>([]); const [chosen, setChosen] = useState<string[] | null>(null);
   const [adjust, setAdjust] = useState<number | null>(null); const [useCycle, setUseCycle] = useState(false); const [cycle, setCycle] = useState<number | null>(null);
   const [preview, setPreview] = useState<Ident>(); const [busy, setBusy] = useState(false);
@@ -170,7 +172,6 @@ export function IdentPanel({ scenario, update, onPreview, auto }: { scenario: Sc
   useEffect(() => {
     setError(''); setPreview(undefined);
     api<Ident>('/analysis/identify', { scale: applied }).then(r => { setId(r); setAdjust(a => a ?? (r.metrics.adjust_yr !== null ? +r.metrics.adjust_yr.toFixed(1) : null)); setCycle(c => c ?? (r.metrics.cycle_yr !== null ? +r.metrics.cycle_yr.toFixed(1) : null)); }).catch(e => setError((e as Error).message));
-    if (changed) api<Ident>('/analysis/identify', { scale: nb }).then(setNominal).catch(() => undefined); else setNominal(undefined);
     api<{ rows: SensRow[] }>('/analysis/sensitivity', { scale: applied }).then(r => { setSens(r.rows); setChosen(c => c ?? r.rows.slice(0, 6).map(x => x.name)); }).catch(() => undefined);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   const find = async () => {
@@ -198,8 +199,8 @@ export function IdentPanel({ scenario, update, onPreview, auto }: { scenario: Sc
     {error && <p className="state-note">{error}</p>}
     {!id && !error && <p className="muted"><LoaderCircle className="spin" size={14}/> Computing…</p>}
     {id && m && <>
-      <h4 className="ident-first">Poles · subsidy → house price, loop open{scenario.bank ? '' : ' · no bank (CPB model)'}</h4><PoleMap id={id} nominal={preview ? undefined : nominal} preview={preview} path={path}/>
-      <h4>Step response · +1 in the subsidy</h4><StepView id={id} nominal={nominal} preview={preview}/>
+      <h4 className="ident-first">Poles · subsidy → house price, loop open{scenario.bank ? '' : ' · no bank (CPB model)'}</h4><PoleMap id={id} preview={preview} path={path}/>
+      <h4>Step response · +1 in the subsidy</h4><StepView id={id} preview={preview}/>
       <p className="ident-line">Long-run <b>{fmt(id.final, 3)}</b> · peak <b>{fmt(id.peak.y, 3)}</b> after {fmt(id.peak.t, 1)} yr · full adjustment <b>{fmt(m.adjust_yr, 1)} yr</b> · cycle <b>{fmt(m.cycle_yr, 1)} yr</b></p>
       <hr/>
       <h4>Change the model</h4>
@@ -222,7 +223,7 @@ export function IdentPanel({ scenario, update, onPreview, auto }: { scenario: Sc
       {changed && <p className="state-note">The model runs with changed parameters: {Object.entries(own).map(([n, f]) => `${nameOf(n)} × ${fmt(f, 2)}`).join(', ')}. The H∞ and Ziegler–Nichols gains were designed for the netlist values; check them again. The operating point and the linearised B4 stay those of the netlist.</p>}
       <details className="ident-notes"><summary>About these plots</summary>
         <p className="muted small">A permanent +1 in the owner-occupied subsidy u (model units), loop open. Linear model of the netlist at its 2015 operating point; checked against the simulated netlist (difference below 0.03).</p>
-        {path && <p className="muted small">{preview ? 'Blue: where the poles move from the current model to the proposed parameters.' : 'Green line: where the dominant pair moved from the netlist values (light grey ×) to the parameters in use.'} Dots: all poles at {path.length} steps in between.</p>}
+        {path && <p className="muted small">{preview ? 'Blue: where the poles move from the current model to the proposed parameters.' : 'Green line: where the dominant pair moved from the netlist values to the parameters in use.'} Dots: all poles at {path.length} steps in between.</p>}
         <p className="muted small">Full adjustment: the time after which all decaying terms of the response together are below 5% of the long-run change (Claude's definition; the measured 5% settling time is {fmt(id.settle_5pct_yr, 1)} yr). Dominant pair: the oscillating poles that show most in the price, not the slowest ones. The CPB line has the same long-run size by construction: only its shape (an immediate jump) is the CPB's.</p>
       </details>
     </>}
