@@ -6,7 +6,8 @@ import 'katex/dist/katex.min.css';
 // document, parameter values are its own (beta 0.65, rho 3.95%, sigma 2, delta 0.117).
 // flows / elements: what lights up on the canvas when the formula is clicked. Which circuit parts belong to which
 // equation is Claude's reading of the netlist (10 Nov 2026), for Jesse to check.
-export type Formula = { id: string; title: string; no: string; tex: string; note?: string; flows: string[]; elements: string[] };
+// trace: elements whose connecting wires light up as well (the wires between them, not the ports to other agents).
+export type Formula = { id: string; title: string; no: string; tex: string; note?: string; flows: string[]; elements: string[]; trace?: string[] };
 export const FORMULAS: Record<string, Formula[]> = {
   constructors: [
     { id: 'construction', title: 'New construction', no: '2.14', tex: 'I_t = (\\gamma+\\omega)\\,\\alpha_t\\,P_m^{\\beta}',
@@ -16,7 +17,8 @@ export const FORMULAS: Record<string, Formula[]> = {
   investors: [
     { id: 'price', title: 'Market price of a house', no: '2.17', tex: 'P_m = \\sum_{t=1}^{\\infty} \\frac{w^{*}(t) - \\kappa(t)}{(1+\\rho)^{t}}',
       note: 'w* gross (imputed) rent, κ maintenance, ρ = 3.95% required return',
-      flows: ['rent', 'imputed_rent', 'construction_cost'], elements: ['L§Gross_rent', 'L§Gross_imputed_rent', 'V§Maintenance_costs', 'R13', 'C2', 'C3', 'R3', 'R6'] },
+      flows: ['construction_cost'], elements: ['L§Gross_rent', 'L§Gross_imputed_rent', 'V§Maintenance_costs', 'L1', 'R9', 'R13'],
+      trace: ['L§Gross_rent', 'L§Gross_imputed_rent', 'V§Maintenance_costs', 'L1', 'R9', 'R13'] },
   ],
   households: [
     { id: 'utility', title: 'Utility', no: '2.1',

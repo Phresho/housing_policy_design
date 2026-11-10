@@ -63,7 +63,7 @@ export function SensBody({ K, filtered, settling, overshoot, w = 268, h = 168, k
 }
 
 /** Year-on-year change: CBS bars (moved by `lag` months) behind the model line. */
-export function YoyBody({ year, model, cbs, lag, cpb, w = 356, h = 150, k = 1, ghost }: { year?: number[]; model?: number[]; cbs?: { year: number[]; yoy: number[] }; lag: number; cpb?: { year: number[]; yoy: number[] }; w?: number; h?: number; k?: number; ghost?: number[] }) {
+export function YoyBody({ year, model, cbs, lag, cpb, w = 356, h = 150, k = 1, ghost, color = '#3f9a1f' }: { year?: number[]; model?: number[]; cbs?: { year: number[]; yoy: number[] }; lag: number; cpb?: { year: number[]; yoy: number[] }; w?: number; h?: number; k?: number; ghost?: number[]; color?: string }) {
   if (!cbs && !model) return <small className="muted">No data yet.</small>;
   const x0 = 1996, x1 = 2027, cy = cbs ? cbs.year.map(v => v + lag / 12) : [];
   const all = [...(cbs?.yoy ?? []), ...(model ?? []), ...(cpb?.yoy ?? []), ...(ghost ?? [])], lo = Math.min(-2, ...all), hi = Math.max(2, ...all);
@@ -75,6 +75,6 @@ export function YoyBody({ year, model, cbs, lag, cpb, w = 356, h = 150, k = 1, g
     {cbs && cy.map((t, i) => t >= x0 && t <= x1 && <rect key={i} x={sx(t) - bw * .4} width={bw * .8} y={Math.min(sy(0), sy(cbs.yoy[i]))} height={Math.abs(sy(cbs.yoy[i]) - sy(0))} fill="#c4c9c6"/>)}
     {cpb && <polyline fill="none" stroke="#3f9a1f" strokeWidth={3.2 * k} strokeDasharray={`${8 * k} ${5 * k}`} points={cpb.year.flatMap((t, i) => [`${sx(t)},${sy(cpb.yoy[i])}`, `${sx(t + 1)},${sy(cpb.yoy[i])}`]).join(' ')}/>}
     {ghost && year && ghost.length === year.length && <polyline fill="none" stroke="#8a9692" strokeWidth={2.6 * k} strokeDasharray={`${7 * k} ${4 * k}`} points={year.map((t, i) => `${sx(t)},${sy(ghost[i])}`).join(' ')}/>}
-    {model && year && <polyline fill="none" stroke="#3f9a1f" strokeWidth={4 * k} strokeLinejoin="round" points={year.map((t, i) => `${sx(t)},${sy(model[i])}`).join(' ')}/>}
+    {model && year && <polyline fill="none" stroke={color} strokeWidth={4 * k} strokeLinejoin="round" points={year.map((t, i) => `${sx(t)},${sy(model[i])}`).join(' ')}/>}
   </svg>;
 }

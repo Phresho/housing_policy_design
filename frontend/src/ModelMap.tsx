@@ -150,7 +150,7 @@ function probeInput(map: MapData, p: Probe): { kind: string; id: string } | null
   if (LOOP_SIGNALS[p.flow]) return null;
   return map.disturbances.some(d => d.id === p.flow) ? { kind: 'signal', id: p.flow } : { kind: 'flow', id: p.flow };
 }
-type ProbeState = { compare?: { result: Result; color: string; label: string; align: boolean } | null; cardSize?: { w: number; h: number }; pins: Probe[]; sensed: Probe[]; unpin: (p: Probe) => void; dock: (p: Probe) => void; stepAt?: string; stepLabel?: string; charts: ChartCard[]; bodeFrom: Probe | null; setBodeFrom: (p: Probe | null) => void; addBode: (from: Probe, to: Probe, at: XY) => void; addChart: (c: ChartCard, at: XY) => void; removeChart: (id: string) => void; openSensor: () => void; ctx: Ctx; cbs?: CbsData; lag: number; cpb?: { year: number[]; yoy: number[] }; pos: Record<string, XY>; setPos: (id: string, p: XY) => void; place: (p: Probe, at: XY) => void; sense: (p: Probe) => void; show?: (p: Probe, e: React.MouseEvent) => void };
+type ProbeState = { compare?: { result: Result; color: string; label: string; align: boolean } | null; cardSize?: { w: number; h: number }; pins: Probe[]; sensed: Probe[]; unpin: (p: Probe) => void; dock: (p: Probe) => void; muted?: boolean; stepAt?: string; stepLabel?: string; charts: ChartCard[]; bodeFrom: Probe | null; setBodeFrom: (p: Probe | null) => void; addBode: (from: Probe, to: Probe, at: XY) => void; addChart: (c: ChartCard, at: XY) => void; removeChart: (id: string) => void; openSensor: () => void; ctx: Ctx; cbs?: CbsData; lag: number; cpb?: { year: number[]; yoy: number[] }; pos: Record<string, XY>; setPos: (id: string, p: XY) => void; place: (p: Probe, at: XY) => void; sense: (p: Probe) => void; show?: (p: Probe, e: React.MouseEvent) => void };
 type ProbeActions = { addSens: () => void; hasSens: boolean; pinned: (p: Probe) => boolean; sensed: (p: Probe) => boolean; pin: (p: Probe) => void; sense: (p: Probe) => void; list: Probe[]; count: number; stepInput: string; setStepInput: (id: string) => void };
 const probeKey = (p: Probe) => `${p.flow}:${p.q}`;
 const probeOf = (id: string): Probe => { const [flow, q] = id.split(':'); return { flow, q: q as Probe['q'] }; };
@@ -202,7 +202,7 @@ function PinTools({ children, keepOpen }: { children: React.ReactNode; keepOpen?
     {!keepOpen && <button className="tools-toggle" aria-label={show ? 'Hide the card buttons' : 'Show the card buttons'} title={show ? 'Hide the buttons' : 'Bode, send to CBS, dock, remove'} onClick={() => setOpen(o => !o)}>{show ? '›' : '‹'}</button>}</span>;
 }
 // Plot cards live in their own layer, scaled with the canvas but drawn above the block headers.
-const PIN_W = 252, PIN_H = 150;
+const PIN_W = 252, PIN_H = 150, MUTED = '#b3bab7';
 // Disturbance rejection (tour): a realistic shock size instead of +1 (Claude's choices, a fifth of each historical
 // shock where there is one; the linear response scales with it).
 const SHOCK_STEP: Record<string, [number, string]> = {
@@ -247,7 +247,7 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
     const S = sz(id, c.kind), bw = S.w - 16, D = DEFAULT[c.kind], f = Math.max(1, Math.min(S.w / D.w, S.h / D.h));
     return <div key={id} className={'pin-card chart-card ' + c.kind} style={{ left: pos.x, top: pos.y, width: S.w, height: S.h, ['--s' as string]: f }} onPointerDown={drag(id, base)}>{handle(id, c.kind)}
       <div className="pin-head"><strong title={title}>{title}</strong>{c.kind === 'cbs' && <PinTools><button aria-label="Send to the dock" title="Open the CBS sensor in the dock" onClick={probes.openSensor}>⇥</button></PinTools>}<button className="pin-close" aria-label="Remove from the canvas" title="Remove from the canvas" onClick={() => probes.removeChart(id)}>×</button></div>
-      {c.kind === 'cbs' ? <><YoyBody k={f} w={bw} h={S.h - 64 * f} year={result?.year} model={result?.scenario.inflation_pct ? result.series.yoy.map(v => v + result.scenario.inflation_pct) : result?.series.yoy} cbs={probes.cbs} lag={probes.lag} cpb={probes.cpb} ghost={probes.compare && !probes.compare.align && probes.compare.result.series.yoy ? probes.compare.result.series.yoy.map(v => v + (probes.compare!.result.scenario.inflation_pct ?? 0)) : undefined}/><small>Green: model run{probes.compare && !probes.compare.align ? ', grey dashed: open loop' : ''}{result ? '' : ' (run the simulation)'}.{probes.cpb ? ' Green dashed: CPB model.' : ''} Grey: CBS index, moved {probes.lag} month{Math.abs(probes.lag) === 1 ? '' : 's'}. % a year.</small></>
+      {c.kind === 'cbs' ? <><YoyBody color={probes.muted ? MUTED : undefined} k={f} w={bw} h={S.h - 64 * f} year={result?.year} model={result?.scenario.inflation_pct ? result.series.yoy.map(v => v + result.scenario.inflation_pct) : result?.series.yoy} cbs={probes.cbs} lag={probes.lag} cpb={probes.cpb} ghost={probes.compare && !probes.compare.align && probes.compare.result.series.yoy ? probes.compare.result.series.yoy.map(v => v + (probes.compare!.result.scenario.inflation_pct ?? 0)) : undefined}/><small>Green: model run{probes.compare && !probes.compare.align ? ', grey dashed: open loop' : ''}{result ? '' : ' (run the simulation)'}.{probes.cpb ? ' Green dashed: CPB model.' : ''} Grey: CBS index, moved {probes.lag} month{Math.abs(probes.lag) === 1 ? '' : 's'}. % a year.</small></>
       : c.kind === 'sens' ? <SensBody k={f} w={bw} h={S.h - 100 * f} K={probes.ctx.K} filtered={probes.ctx.filtered} settling={probes.ctx.settling} overshoot={probes.ctx.overshoot}/>
         : <BodeBody k={f} w={bw} h={S.h - 74 * f} input={probeInput(map, c.from)!} output={probeInfo(map, c.to).step!} feedback={probes.ctx.feedback} K={probes.ctx.K} filtered={probes.ctx.filtered}/>}</div>;
   });
@@ -269,7 +269,8 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
   });
   return <div className="pin-layer" style={{ transform: `translate(${tx}px, ${ty}px) scale(${k})` }} onWheel={wheel}><svg className="pin-links">{links}{leads}</svg>{charts}{probes.pins.map((p, i) => {
     const id = `pin-${probeKey(p)}`, info = probeInfo(map, p), base = probes.pos[id] ?? fallback[id] ?? { x: 0, y: i * (PIN_H + 20) }, pos = live?.id === id ? live : base;
-    const y = result && info.signal ? readTrace(result, info.signal) : undefined, color = info.color;
+    // Before the first Play after a run, the simulation plots are grey; Play (or the year slider) colours them.
+    const y = result && info.signal ? readTrace(result, info.signal) : undefined, color = probes.muted && !steps ? MUTED : info.color;
     const st = steps && (info.step ? steps.responses[`${info.step.kind}:${info.step.id}`] : { error: 'An input: no step response' });
     const sent = probes.sensed.some(q => probeKey(q) === probeKey(p));
     const S = sz(id, 'probe'), f = Math.max(1, Math.min(S.w / PIN_W, S.h / PIN_H)), pw = S.w - 12 * f, ph = S.h - 58 * f;
@@ -302,7 +303,7 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
           if (p.flow === 'y_yoy' && p.q === 's') {
             // year-on-year: the CBS index as grey bars behind it, as in the CBS card (model + inflation for the nominal index)
             const infl = result!.scenario.inflation_pct ?? 0, gy = cmp && cmp.result.series.yoy ? cmp.result.series.yoy.map(v => v + infl) : undefined;
-            return <><YoyBody k={f} w={pw} h={ph} year={result!.year} model={y.map(v => v + infl)} cbs={probes.cbs} lag={probes.lag} cpb={probes.cpb} ghost={gy}/><small>{result!.year[at].toFixed(1)}: <b>{fmt(y[at] + infl)}</b>{gy ? <span className="ghost-note" style={{ color: '#8a9692' }}> · open loop (grey dashed): {fmt(gy[at])}</span> : null}{probes.cbs ? <span className="ghost-note" style={{ color: '#8a9692' }}> · grey bars: CBS</span> : null}</small></>;
+            return <><YoyBody color={color} k={f} w={pw} h={ph} year={result!.year} model={y.map(v => v + infl)} cbs={probes.cbs} lag={probes.lag} cpb={probes.cpb} ghost={gy}/><small>{result!.year[at].toFixed(1)}: <b>{fmt(y[at] + infl)}</b>{gy ? <span className="ghost-note" style={{ color: '#8a9692' }}> · open loop (grey dashed): {fmt(gy[at])}</span> : null}{probes.cbs ? <span className="ghost-note" style={{ color: '#8a9692' }}> · grey bars: CBS</span> : null}</small></>;
           }
           return <><MiniPlot y={y} at={at} color={color} w={pw} h={ph} k={f} label={result!.year[at].toFixed(1)} ghost={g} ghostColor={cmp?.color}/><small>{result!.year[at].toFixed(1)}: <b>{fmt(y[at])}</b>{g ? <span className="ghost-note" style={{ color: cmp!.color }}> · {cmp!.label}: {fmt(g[at])}</span> : null}</small></>;
         })() : <small className="muted">Run the simulation to see this signal.</small>}</div>;
@@ -661,7 +662,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       block('finance', R.finance, view.finance ? { label: scenario.bank ? 'Financial sector' : 'Financial sector · off', tone: scenario.bank ? 'sub-group' : 'sub-group bank-off', open: true, tab: 'tl', toggle: () => toggle('finance') } : { label: scenario.bank ? 'Financial sector' : 'Financial sector · off', tone: scenario.bank ? 'sub-closed' : 'sub-closed bank-off', toggle: () => toggle('finance') }, view.finance ? 1 : 2);
       const agentBlock = (id: string) => {
         const open = view.agents.includes(id), a = map.agents[id];
-        const circuit = <AgentCircuit map={map} agent={id} scenario={scenario} selection={selection} pick={select} menu={menu} inputs={map.disturbances.filter(d => d.target === id && active(d))} inputSide={id === 'bank' ? 'top' : 'left'} outside highlight={hl?.elements} litFlows={hl?.flows}/>;
+        const circuit = <AgentCircuit map={map} agent={id} scenario={scenario} selection={selection} pick={select} menu={menu} inputs={map.disturbances.filter(d => d.target === id && active(d))} inputSide={id === 'bank' ? 'top' : 'left'} outside highlight={hl?.elements} litFlows={hl?.flows} trace={hl?.trace}/>;
         const cards = withEq(id) ? <FormulaCards agent={id} active={hl?.id ?? null} pick={setHl}/> : undefined;
         const sh = strip(id);
         block(id, R[id], open ? { label: a.label, tone: 'agent', open, tab: TAB[id], toggle: () => toggle(id),
@@ -841,7 +842,7 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   const [view, setViewState] = useState<View>(CLOSED);
   const [focus, setFocus] = useState({ id: '', n: 0 });
   const [selection, setSelection] = useState<Selection>(NONE);
-  const [index, setIndex] = useState<number>();
+  const [index, setIndex] = useState<number>(), [played, setPlayed] = useState(false);
   const [tf, setTf] = useState<TfPicks>({});
   const [menuAt, setMenuAt] = useState<MenuState | null>(null);
   const [dock, setDock] = useState(false);
@@ -907,9 +908,9 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   const stepGain = useCallback((k: GainKey, up: boolean) => latest.current.update(stepPatch(latest.current.scenario, k, up)), []);
   const same = (a: Probe) => (b: Probe) => a.flow === b.flow && a.q === b.q;
   const toggleIn = (set: React.Dispatch<React.SetStateAction<Probe[]>>) => (p: Probe) => set(old => old.some(same(p)) ? old.filter(x => !same(p)(x)) : [...old, p]);
-  const probeState = useMemo<ProbeState>(() => ({ compare: selection.kind === 'ident' && ghost ? { result: ghost, color: '#2F6FB5', label: 'proposed (blue, same start)', align: true } : tour?.compare && pinned ? { result: pinned, color: '#8a9692', label: 'open loop (grey dashed)', align: false } : null, cardSize: tour ? TOUR_CARD : undefined, pins, sensed, unpin: p => setPins(old => old.filter(x => !same(p)(x))), dock: p => { setDock(true); setSelection(p.q === 's' && LOOP_SIGNALS[p.flow] ? LOOP_SIGNALS[p.flow].dock : { kind: 'probe', id: `${p.flow}:${p.q}` }); }, stepAt: stepping ? stepInput : undefined, stepLabel: stepping ? (stepInput === 'd_interest' ? '+1 percentage point' : tourReject && SHOCK_STEP[stepInput] ? SHOCK_STEP[stepInput][1].split(' (')[0] : '+1') : undefined, charts, bodeFrom, setBodeFrom, ctx, removeChart: id => setCharts(old => old.filter(c => c.id !== id)), cbs, lag, cpb, openSensor: () => { setDock(true); setSelection({ kind: 'sensor', id: '' }); },
+  const probeState = useMemo<ProbeState>(() => ({ compare: selection.kind === 'ident' && ghost ? { result: ghost, color: '#2F6FB5', label: 'proposed (blue, same start)', align: true } : tour?.compare && pinned ? { result: pinned, color: '#8a9692', label: 'open loop (grey dashed)', align: false } : null, cardSize: tour ? TOUR_CARD : undefined, pins, sensed, unpin: p => setPins(old => old.filter(x => !same(p)(x))), dock: p => { setDock(true); setSelection(p.q === 's' && LOOP_SIGNALS[p.flow] ? LOOP_SIGNALS[p.flow].dock : { kind: 'probe', id: `${p.flow}:${p.q}` }); }, muted: !!result && !played, stepAt: stepping ? stepInput : undefined, stepLabel: stepping ? (stepInput === 'd_interest' ? '+1 percentage point' : tourReject && SHOCK_STEP[stepInput] ? SHOCK_STEP[stepInput][1].split(' (')[0] : '+1') : undefined, charts, bodeFrom, setBodeFrom, ctx, removeChart: id => setCharts(old => old.filter(c => c.id !== id)), cbs, lag, cpb, openSensor: () => { setDock(true); setSelection({ kind: 'sensor', id: '' }); },
     addChart: (c, at) => { setCharts(old => old.some(x => x.id === c.id) ? old : [...old, c]); setPinPos(old => ({ ...old, [c.id]: at })); },
-    addBode: (from, to, at) => { const id = `bode-${probeKey(from)}-${probeKey(to)}`; setCharts(old => old.some(c => c.id === id) ? old : [...old, { id, kind: 'bode', from, to }]); setPinPos(old => ({ ...old, [id]: at })); setBodeFrom(null); }, pos: pinPos, setPos: (id, q) => setPinPos(old => ({ ...old, [id]: q })), place: (p, at) => { setPins(old => old.some(same(p)) ? old : [...old, p]); setPinPos(old => ({ ...old, [`pin-${p.flow}:${p.q}`]: at })); }, sense: toggleIn(setSensed) }), [pins, sensed, pinPos, tuning, stepInput, charts, bodeFrom, ctx, cbs, lag, cpb, !!tour, ghost, selection.kind, tour?.compare, pinned, tourReject, stepping]);
+    addBode: (from, to, at) => { const id = `bode-${probeKey(from)}-${probeKey(to)}`; setCharts(old => old.some(c => c.id === id) ? old : [...old, { id, kind: 'bode', from, to }]); setPinPos(old => ({ ...old, [id]: at })); setBodeFrom(null); }, pos: pinPos, setPos: (id, q) => setPinPos(old => ({ ...old, [id]: q })), place: (p, at) => { setPins(old => old.some(same(p)) ? old : [...old, p]); setPinPos(old => ({ ...old, [`pin-${p.flow}:${p.q}`]: at })); }, sense: toggleIn(setSensed) }), [pins, sensed, pinPos, tuning, stepInput, charts, bodeFrom, ctx, cbs, lag, cpb, !!tour, ghost, selection.kind, tour?.compare, pinned, tourReject, stepping, result, played]);
   const actions: ProbeActions = { addSens: () => setCharts(old => old.some(c => c.kind === 'sens') ? old.filter(c => c.kind !== 'sens') : [...old, { id: 'sens', kind: 'sens' }]), hasSens: charts.some(c => c.kind === 'sens'), pinned: p => pins.some(same(p)), sensed: p => sensed.some(same(p)), pin: toggleIn(setPins), sense: toggleIn(setSensed), list: sensed, count: pins.length, stepInput, setStepInput };
   const canvasRef = useRef<HTMLDivElement>(null);
   const labelOf = (t: Selection) => !map ? t.id : t.kind === 'flow' ? map.flows.find(f => f.id === t.id)?.label ?? t.id : t.kind === 'signal' ? [...map.disturbances, ...map.outputs].find(o => o.id === t.id)?.label ?? t.id : t.id;
@@ -928,12 +929,14 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   const [playing, setPlaying] = useState(false);
   // A new run shows the whole period at once (lines dark to the end); Play runs it through time on request.
   useEffect(() => { if (result) { setPlaying(false); setIndex(result.year.length - 1); } }, [result]);
+  // Plots stay grey until Play is pressed once; a new tour step starts grey again (re-runs after a gain change do not).
+  useEffect(() => { setPlayed(false); }, [tour?.n]);
   useEffect(() => {
     if (!playing || !result) return;
     const n = result.year.length, t = window.setInterval(() => setIndex(i => { const next = Math.min((i ?? 0) + 2, n - 1); if (next >= n - 1) setPlaying(false); return next; }), 50);
     return () => clearInterval(t);
   }, [playing, result]);
-  const togglePlay = () => { if (!result) return; if (!playing && at >= result.year.length - 1) setIndex(0); setPlaying(p => !p); };
+  const togglePlay = () => { if (!result) return; setPlayed(true); if (!playing && at >= result.year.length - 1) setIndex(0); setPlaying(p => !p); };
   const setView = (next: View) => {
     const opened = next.agents.find(a => !view.agents.includes(a)) ?? (next.controller && !view.controller ? 'controller' : next.cbs && !view.cbs ? 'sensor' : next.cpb && !view.cpb ? 'cpb' : next.finance && !view.finance ? 'finance' : next.system && !view.system ? 'system' : '');
     const parent = (a: string) => CPB_AGENTS.includes(a) ? 'cpb' : a === 'bank' ? 'finance' : 'system';
@@ -954,7 +957,7 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
       <label className="label-size" title="Size of block headers, signal names and the Parliament, Tax Authority and CBS blocks">Label size <output>{lab.toFixed(1)}×</output><input type="range" aria-label="Label size" min={1} max={2.5} step={0.1} value={lab} onChange={e => setLab(Number(e.target.value))}/></label>
     </div>
       <div className="segmented small" role="group" aria-label="Feedback"><button className={!scenario.feedback ? 'active' : ''} aria-pressed={!scenario.feedback} onClick={() => setFeedback(false)}>Open loop</button><button className={scenario.feedback ? 'active' : ''} aria-pressed={scenario.feedback} onClick={() => setFeedback(true)}>Closed loop</button></div>
-      {result ? <label className="year-slider"><button type="button" className="ghost play" data-no-shot aria-label={playing ? 'Pause' : 'Play through time'} title={playing ? 'Pause' : 'Play: run the plots through time'} onClick={e => { e.preventDefault(); togglePlay(); }}>{playing ? <Pause size={14}/> : <Play size={14}/>}</button>Values in <output>{result.year[at].toFixed(1)}</output><input type="range" aria-label="Year for the values on the map" min={0} max={result.year.length - 1} value={at} onChange={e => { setPlaying(false); setIndex(Number(e.target.value)); }}/></label> : <button className="primary" disabled={busy} onClick={run}>Run to show values</button>}</div>
+      {result ? <label className="year-slider"><button type="button" className="ghost play" data-no-shot aria-label={playing ? 'Pause' : 'Play through time'} title={playing ? 'Pause' : 'Play: run the plots through time'} onClick={e => { e.preventDefault(); togglePlay(); }}>{playing ? <Pause size={14}/> : <Play size={14}/>}</button>Values in <output>{result.year[at].toFixed(1)}</output><input type="range" aria-label="Year for the values on the map" min={0} max={result.year.length - 1} value={at} onChange={e => { setPlaying(false); setPlayed(true); setIndex(Number(e.target.value)); }}/></label> : <button className="primary" disabled={busy} onClick={run}>Run to show values</button>}</div>
     <div className="map-body" ref={bodyRef} style={{ gridTemplateColumns: `${left ? (leftOpen ? '290px ' : '34px ') : ''}minmax(0,1fr) ${!dock ? '34px' : selection.kind === 'ident' || selection.kind === 'robust' ? '520px' : selection.kind === 'agent' && selection.id === 'controller' ? '460px' : '340px'}` }}>
       {left && (leftOpen ? <aside className="inspector left-dock"><button className="dock-toggle" aria-label="Collapse scenario panel" title="Collapse" onClick={() => setLeftOpen(false)}><Minus size={14}/></button>{left}</aside>
         : <button className="dock-handle" data-no-shot aria-label="Open scenario panel" title="Open scenario panel" onClick={() => setLeftOpen(true)}><ChevronRight size={16}/><span>Scenario</span></button>)}
