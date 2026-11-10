@@ -389,3 +389,7 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { opac
 .map-node .block-grip:hover { opacity:1; }
 
 
+
+/* CPB equations beside an opened agent's circuit */
+.formula-strip.side { padding:10px 12px; align-items:center; border-top:0; }
+.formula-strip.side.L { border-right:1px dashed #c9b88f; } .formula-strip.side.R { border-left:1px dashed #c9b88f; }

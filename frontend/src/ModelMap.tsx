@@ -582,7 +582,14 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     // inside an opened agent the width is the circuit's: the widest equation (utility) fits up to 1.75x labels
     const STRIP_EQ_MAX: Record<string, number> = { households: 1.75 / 1.3 };
     const eqIn = (id: string) => Math.min(eq, STRIP_EQ_MAX[id] ?? Infinity);
-    const strip = (id: string) => withEq(id) && view.agents.includes(id) ? (STRIP_H[id] ?? 0) * eqIn(id) : 0;
+    // Equations beside the circuit (wider, flatter figure for slides) on a side without ports: Constructors left;
+    // Investors and Households right, where only the bank connects (so only with the bank off). Otherwise above/below.
+    const SIDE: Record<string, 'L' | 'R'> = { constructors: 'L', investors: 'R', households: 'R' };
+    // beside the circuit the equations are drawn 1.45x larger (there is room), in a column that fits the widest one
+    const SIDE_EQ = 1.45, STRIP_W: Record<string, number> = { constructors: 470, investors: 500, households: 700 };
+    const side = (id: string) => withEq(id) && view.agents.includes(id) && SIDE[id] && (SIDE[id] === 'L' || !scenario.bank) ? STRIP_W[id] * eq : 0;
+    const circL = (id: string) => SIDE[id] === 'L' ? side(id) : 0;  // x offset of the circuit inside the block
+    const strip = (id: string) => withEq(id) && view.agents.includes(id) && !side(id) ? (STRIP_H[id] ?? 0) * eqIn(id) : 0;
     // An opened agent without a formula strip on top gets a band for its header (it grows with the label size), so
     // the header never covers the top of the circuit. A top strip already leaves room for it.
     const band = (id: string) => view.agents.includes(id) && !(strip(id) && !STRIP_BOTTOM.has(id)) ? HEAD_FLOW * lab : 0;
@@ -590,15 +597,17 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     const stripTop = (id: string) => band(id) + (STRIP_BOTTOM.has(id) ? 0 : strip(id));  // offset of the circuit inside the block
     const lit = (flow: string) => !!hl?.flows.includes(flow);
     const shift = (dx: number, dy: number, ids: string[]) => ids.forEach(i => { R[i].x += dx; R[i].y += dy; });
-    const sized = (id: string) => { const open = view.agents.includes(id), [w, h] = map.layouts[id].size; scale[id] = open ? SCALE.expanded : 0; R[id] = open ? { x: 0, y: 0, w: w * SCALE.expanded, h: h * SCALE.expanded + extra(id) } : { x: 0, y: 0, w: AB(id)[0], h: AB(id)[1] }; };
+    const sized = (id: string) => { const open = view.agents.includes(id), [w, h] = map.layouts[id].size; scale[id] = open ? SCALE.expanded : 0; R[id] = open ? { x: 0, y: 0, w: w * SCALE.expanded + side(id), h: Math.max(h * SCALE.expanded, side(id) ? (STRIP_H[id] ?? 0) * eq * SIDE_EQ * 0.9 : 0) + extra(id) } : { x: 0, y: 0, w: AB(id)[0], h: AB(id)[1] }; };
+    // The circuit area of an opened agent, in canvas units.
+    const circ = (id: string): Rect => { const [w, h] = map.layouts[id].size, r = R[id]; if (!view.agents.includes(id)) return r; return { x: r.x + circL(id), y: r.y + stripTop(id), w: w * SCALE.expanded, h: h * SCALE.expanded }; };
     // Port of a flow on a block: agent (from its drawing), collapsed CPB box, or collapsed financial sector (drawn like Bank).
     const portOf = (node: string, flow: string): { p: Point; side: Side; ret: Point } => {
       const r = R[node];
       if (node === 'cpb') { const c = CPB_PORTS[flow]; const p: Point = [r.x + c.p[0], r.y + c.p[1]]; return { p, side: c.side, ret: c.side === 'R' ? [p[0], p[1] + 12] : [p[0] + 12, p[1]] }; }
       const l = map.layouts[node === 'finance' ? 'bank' : node], [w, h] = l.size, s = scale[node] ?? 0;
       if (!s) { const e = evenPort(l, flow, node === 'finance' ? FIN_BOX : AB(node)); return { p: [r.x + e.p[0], r.y + e.p[1]], side: e.side, ret: [r.x + e.ret[0], r.y + e.ret[1]] }; }
-      const [x, y] = l.ports[flow], [rx, ry] = l.returns[flow], top = r.y + stripTop(node);
-      return { p: [r.x + x * s, top + y * s], side: x === 0 ? 'L' : x === w ? 'R' : y === 0 ? 'T' : 'B', ret: [r.x + rx * s, top + ry * s] };
+      const [x, y] = l.ports[flow], [rx, ry] = l.returns[flow], top = r.y + stripTop(node), left = r.x + circL(node);
+      return { p: [left + x * s, top + y * s], side: x === 0 ? 'L' : x === w ? 'R' : y === 0 ? 'T' : 'B', ret: [left + rx * s, top + ry * s] };
     };
     let group: Rect = { x: GX, y: GY, w: 250, h: 150 }, cpbRegion: Rect | null = null, finRegion: Rect | null = null;
     const g12 = 340, rowGap = 340, g23 = 340, framePad = 34;
@@ -695,9 +704,12 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
         const open = view.agents.includes(id), a = map.agents[id];
         const circuit = <AgentCircuit map={map} agent={id} scenario={scenario} selection={selection} pick={select} menu={menu} inputs={map.disturbances.filter(d => d.target === id && active(d))} inputSide={id === 'bank' ? 'top' : 'left'} outside highlight={hl?.elements} litFlows={hl?.flows} trace={hl?.trace}/>;
         const cards = withEq(id) ? <FormulaCards agent={id} active={hl?.id ?? null} pick={setHl}/> : undefined;
-        const sh = strip(id), bh = band(id), pc = (v: number) => `${v / R[id].h * 100}%`;
+        const sh = strip(id), bh = band(id), sw = side(id), pc = (v: number) => `${v / R[id].h * 100}%`, pw = (v: number) => `${v / R[id].w * 100}%`;
+        const cw = map.layouts[id].size[0] * SCALE.expanded, chh = map.layouts[id].size[1] * SCALE.expanded;
         block(id, R[id], open ? { label: a.label, tone: 'agent', open, tab: TAB[id], toggle: () => toggle(id),
-            children: sh ? (STRIP_BOTTOM.has(id)
+            children: sw ? <><div className="circuit-below" style={{ top: pc(bh), left: pw(circL(id)), width: pw(cw), height: pc(chh), right: 'auto', bottom: 'auto' }}>{circuit}</div>
+              <div className={'formula-strip side ' + SIDE[id]} style={{ top: pc(bh), bottom: 0, height: 'auto', left: SIDE[id] === 'L' ? 0 : pw(cw), right: 'auto', width: pw(sw), ['--eq' as string]: eq * SIDE_EQ }}>{cards}</div></>
+            : sh ? (STRIP_BOTTOM.has(id)
               ? <><div className="circuit-below" style={{ top: pc(bh), bottom: pc(sh) }}>{circuit}</div><div className="formula-strip bottom" style={{ top: 'auto', bottom: 0, height: `${sh / R[id].h * 100}%`, ['--eq' as string]: eqIn(id) }}>{cards}</div></>
               : <><div className="formula-strip" style={{ height: `${sh / R[id].h * 100}%`, ['--eq' as string]: eqIn(id) }}>{cards}</div><div className="circuit-below" style={{ top: pc(sh) }}>{circuit}</div></>) : bh ? <div className="circuit-below" style={{ top: pc(bh) }}>{circuit}</div> : circuit }
           : { label: a.label, tone: withEq(id) ? 'agent with-formulas' : 'agent', toggle: () => toggle(id), selected: on({ kind: 'agent', id }), children: cards }, 3);
@@ -717,8 +729,8 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       const f = subsidy(id);
       let points: Point[] = [[ctrl.x + ctrl.w, y], [(target ?? group).x, y]];
       if (view.system && view.cpb) {
-        const lay = map.layouts.households, inner = lay.signals.find(s => s.flow === id)!.path, H0 = R.households, sh = strip('households'), H = { ...H0, y: H0.y + stripTop('households'), h: H0.h - extra('households') }, x = H.x + inner[0][0] / lay.size[0] * H.w;
-        points = [[ctrl.x + ctrl.w, y], [x, y], [x, H0.y]];
+        const lay = map.layouts.households, inner = lay.signals.find(s => s.flow === id)!.path, H = circ('households'), x = H.x + inner[0][0] / lay.size[0] * H.w;
+        points = [[ctrl.x + ctrl.w, y], [x, y], [x, R.households.y]];
         // Households open: one arrow on to the subsidy source inside (the drawing's own path, in canvas units)
         if (view.agents.includes('households')) points.push(...inner.slice(1).map(([px, py]) => [H.x + px / lay.size[0] * H.w, H.y + py / lay.size[1] * H.h] as Point));
       }
@@ -780,11 +792,11 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       // An open agent: the shock arrow runs on to the element it acts on (the path the drawing used to draw dashed).
       const into = (agent: string, side: 'left' | 'top', d: { element?: string }, i: number, n: number): Point[] => {
         if (!view.agents.includes(agent)) return [];
-        const lay = map.layouts[agent], e = d.element ? map.elements.find(x => x.name === d.element && x.agent === agent) : undefined, A0 = R[agent], A = { ...A0, y: A0.y + stripTop(agent), h: A0.h - extra(agent) };
+        const lay = map.layouts[agent], e = d.element ? map.elements.find(x => x.name === d.element && x.agent === agent) : undefined, A = circ(agent);
         if (!e || !e.pins || e.pins.length < 2) return [];
         return inputPath(side, i, n, lay.size as [number, number], e.pins).slice(1).map(([px, py]) => [A.x + px / lay.size[0] * A.w, A.y + py / lay.size[1] * A.h] as Point);
       };
-      if (view.cpb) { const F = R.firms, Fy = F.y + stripTop('firms'), Fh = F.h - extra('firms'); firmD.forEach((d, i) => { const x = group.x + 26 + i * 30, y = Fy + Fh * (i + 1) / (firmD.length + 1); place(d, 'left', [[x, top + (firmD.length - 1 - i) * 70], [x, y], [F.x, y], ...into('firms', 'left', d, i, firmD.length)]); }); }
+      if (view.cpb) { const F = R.firms, Fc = circ('firms'), Fy = Fc.y, Fh = Fc.h; firmD.forEach((d, i) => { const x = group.x + 26 + i * 30, y = Fy + Fh * (i + 1) / (firmD.length + 1); place(d, 'left', [[x, top + (firmD.length - 1 - i) * 70], [x, y], [F.x, y], ...into('firms', 'left', d, i, firmD.length)]); }); }
       else firmD.forEach((d, i) => { const x = cpbRegion!.x + 40 + i * 45; place(d, 'left', [[x, top + (firmD.length - 1 - i) * 70], [x, cpbRegion!.y]]); });
       const B = view.finance ? R.bank : finRegion!;
       bankD.forEach((d, i) => { const x = B.x + B.w * (i + 1) / (bankD.length + 1); place(d, 'right', [[x, top + i * 70], [x, B.y], ...(view.finance ? into('bank', 'top', d, i, bankD.length) : [])]); });
