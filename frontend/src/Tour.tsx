@@ -6,13 +6,16 @@ import type { Probe } from './ModelMap';
 // Step sizes, years and the feedback target are Claude's choices. Every step starts from the site's start values.
 const QUIET: Partial<Scenario> = { bank: false, crisis_scale: 0, covid_scale: 0, crisis_w: false, rental_subsidy: false, share_control: false, feedback: false, param_scale: {}, subsidy_path: 'historical', subsidy_scale: 1 };
 // The "Fitted to CBS" inputs (also the preset button in the left column): open loop, bank on, all shocks.
+// The "CPB fit (peaks)" inputs (also the preset button): the CPB structure with its own path, Claude's fit to the two
+// CPB peaks and the level (5 Nov 2026): income x0.10 growing 5% a year, historical subsidies x10.
+export const CPB_PEAKS: Partial<Scenario> = { feedback: false, bank: false, crisis_scale: 0, covid_scale: 0, income_path: 'stable', income_growth_pct: 5, income_scale: 0.1, subsidy_scale: 10, subsidy_path: 'historical', rental_subsidy: false, inflation_pct: 0, mortgage_scale: 1, mortgage_shift_yr: 0, interest_scale: 1, interest_shift_yr: 0, interest_new_share: 0.1 };
 export const FITTED_CBS: Partial<Scenario> = { mortgage_scale: 4.86, mortgage_shift_yr: 2.39, interest_scale: 0.27, interest_shift_yr: 0, interest_new_share: 0.1, inflation_pct: 4.47, covid_on_yr: 1.06, covid_fall_yr: 0.22,
   feedback: false, subsidy_path: 'historical', share_control: false, subsidy_scale: 1, rental_subsidy: true, income_path: 'historical', income_scale: 1, income_growth_pct: 1.53, bank: true, crisis_scale: 2, covid_scale: 1, crisis_start_yr: 2011.1, crisis_w: false, reference_base: 120, target_growth_pct: 0.9 };
 // Low growth (0.3% a year), so a subsidy change stands out against the trend (Jesse, 8 Nov 2026).
 const GROWTH: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 0.3, income_scale: 1 };
 const FLAT: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 0, income_scale: 1 };
 const STEP: Partial<Scenario> = { subsidy_path: 'step', subsidy_base: 0, subsidy_step: 10, subsidy_step_yr: 2005 };
-export type TourStep = { title: string; text: string; patch: Partial<Scenario>; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean; formulas?: boolean };
+export type TourStep = { title: string; text: string; patch: Partial<Scenario>; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean; formulas?: boolean; reject?: string; robust?: boolean; keepGains?: boolean; cpbOverlay?: boolean };
 const price: Probe = { flow: 'y_price', q: 's' }, subsidy: Probe = { flow: 'owner_subsidy', q: 's' }, income: Probe = { flow: 'd_income', q: 's' }, yoy: Probe = { flow: 'y_yoy', q: 's' };
 export const TOUR: TourStep[] = [
   { title: 'The backbone: the CPB model', text: 'The circuit is built on the CPB housing-market model (Groot & Möhlmann, 2020): the four quadrants of DiPasquale and Wheaton. Each agent carries its CPB equations (numbers refer to the CPB document): click one to light up the flows and elements it describes. Open an agent with + to see its elements; the equations stay above them. No shocks, no subsidy, constant income, no bank: nothing pushes the market, so the price stays where it is.',
@@ -25,14 +28,16 @@ export const TOUR: TourStep[] = [
     patch: { ...QUIET, ...GROWTH, subsidy_path: 'staircase', phase_from: 30, phase_start_yr: 2005, phase_years: 10, phase_steps: 20 }, pins: [subsidy, price] },
   { title: 'Phase-out in 3 big steps', text: 'The same total in 3 steps. Each big step starts its own overshoot: the cycles show.',
     patch: { ...QUIET, ...GROWTH, subsidy_path: 'staircase', phase_from: 30, phase_start_yr: 2005, phase_years: 10, phase_steps: 3 }, pins: [subsidy, price] },
-  { title: 'Historical subsidies', text: 'The historical owner-occupied subsidy path of the model, on the same growth path.',
-    patch: { ...QUIET, ...GROWTH }, pins: [subsidy, price] },
+  { title: 'Historical subsidies: the CPB path', text: 'The CPB model’s own historical path (the “CPB fit (peaks)” preset): historical subsidies ×10, income at a tenth growing 5% a year, so the model’s two peaks line up with the CPB’s (green dashed in the year-on-year card). Claude’s fit.',
+    patch: { ...QUIET, ...CPB_PEAKS }, pins: [subsidy, price], cbs: true, cpbOverlay: true },
   { title: 'Bank and disturbances: the real path', text: 'Now the banking sector and all historical inputs and shocks (crisis, Covid, interest, mortgages, income), fitted to CBS. Right card: the model’s year-on-year change against the CBS index.',
     patch: { ...FITTED_CBS }, pins: [price], cbs: true },
   { title: 'PID control, tuned by hand', text: 'Same historical set, loop closed with the Ziegler–Nichols PID. Use the arrows on P, I and D in the Tax Authority, or the lines in the pole plot; each change runs at once. Grey dashed: the open loop with the historical subsidies.',
     patch: { ...FITTED_CBS, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [subsidy, yoy], tuning: true, compare: true },
-  { title: 'H∞ control', text: 'Same historical set with the bank, now the robust H∞ PID. Grey dashed: the open loop with the historical subsidies.',
-    patch: { ...FITTED_CBS, feedback: true, controller: 'hinf', equilibrium_start: true }, pins: [subsidy, yoy, price], compare: true },
+  { title: 'Disturbance rejection', text: 'The PID from the previous step (its gains carry over), hit by one unit shock: the financial crisis by default; pick another shock, such as the interest rate, in the right panel. Cards: step response with the controller; grey dashed: the same shock without it. Linear model, loop closed.',
+    patch: { ...FITTED_CBS, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [price, subsidy], reject: 'd_crisis', keepGains: true },
+  { title: 'H∞ control', text: 'Same historical set with the bank, now the robust H∞ PID. Grey dashed: the open loop with the historical subsidies. Right: robustness (S, T, KS against their limits, random markets) and the Nyquist plot with gain and phase margin.',
+    patch: { ...FITTED_CBS, feedback: true, controller: 'hinf', equilibrium_start: true }, pins: [subsidy, yoy, price], compare: true, robust: true },
 ];
 
 export function TourBar({ step, go, exit, busy }: { step: number; go: (i: number) => void; exit: () => void; busy: boolean }) {

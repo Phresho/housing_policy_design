@@ -15,7 +15,7 @@ info.step8 = await page.locator('.pin-card small').allTextContents();
 const kp0 = await page.locator('.ctrl-box').first().textContent();
 await page.getByRole('button', { name: 'kp up 10%' }).first().click(); await page.waitForTimeout(10000);
 info.kp = [kp0, await page.locator('.ctrl-box').first().textContent()]; info.after = await page.locator('.pin-card small').allTextContents();
-await go(9); await page.locator('.map-body').screenshot({ path: out + '/step9.png', timeout: 30000 });
+await go(10); await page.locator(".map-body").screenshot({ path: out + "/step9.png", timeout: 30000 });
 info.step9 = await page.locator('.pin-card small').allTextContents();
 console.log(JSON.stringify({ info, errors }, null, 1));
 process.exit(0);

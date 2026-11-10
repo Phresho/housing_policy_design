@@ -203,7 +203,7 @@ function PinTools({ children, keepOpen }: { children: React.ReactNode; keepOpen?
 }
 // Plot cards live in their own layer, scaled with the canvas but drawn above the block headers.
 const PIN_W = 252, PIN_H = 150;
-export type StepData = { input: string; responses: Record<string, { t?: number[]; y?: number[]; error?: string }> } | null;
+export type StepData = { input: string; inputId?: string; responses: Record<string, { t?: number[]; y?: number[]; error?: string }>; open?: Record<string, { t?: number[]; y?: number[]; error?: string }> } | null;
 function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { map: MapData; probes: ProbeState; result: Result | null; at: number; fallback: Record<string, XY>; steps?: StepData; lines?: Record<string, Point[]> }) {
   const [tx, ty, k] = useStore(s => s.transform);
   const [live, setLive] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -275,7 +275,12 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
         <button className={sent ? 'on' : ''} aria-label={sent ? 'Stop sending to CBS' : 'Send to CBS'} title={sent ? 'Stop sending to CBS' : 'Send to CBS'} onClick={() => probes.sense(p)}>→CBS</button>
         <button aria-label="Send to the dock" title="Send to the dock" onClick={() => probes.dock(p)}>⇥</button>
         </PinTools><button className="pin-close" aria-label="Remove from the canvas" title="Remove from the canvas" onClick={() => probes.unpin(p)}>×</button></div>
-      {steps ? st?.y ? <><MiniPlot y={st.y} color={color} w={pw} h={ph} k={f}/><small>Step response to {steps.input} +1 · after {st.t![st.t!.length - 1].toFixed(0)} yr: <b>{fmt(st.y[st.y.length - 1])}</b></small></> : <small className="muted">{st?.error ?? 'Computing…'}</small>
+      {steps ? st?.y ? (() => {
+          // The interest rate is a fraction (0.01 = 1%): its step is shown per +1 percentage point, not per +1.
+          const [k0, unit] = steps.inputId === 'd_interest' ? [0.01, '+1 percentage point'] : [1, '+1'];
+          const y1 = st.y!.map(v => v * k0), so = steps.open && info.step ? steps.open[`${info.step.kind}:${info.step.id}`]?.y : undefined;
+          const g = so && so.length === y1.length ? so.map(v => v * k0) : undefined;
+          return <><MiniPlot y={y1} color={color} w={pw} h={ph} k={f} ghost={g} ghostColor="#8a9692"/><small>Step response to {steps.input} {unit} · after {st.t![st.t!.length - 1].toFixed(0)} yr: <b>{fmt(y1[y1.length - 1])}</b>{g ? <span className="ghost-note" style={{ color: '#8a9692' }}> · without the controller (grey dashed): {fmt(g[g.length - 1])}</span> : null}</small></>; })() : <small className="muted">{st?.error ?? 'Computing…'}</small>
         : y ? (() => {
           // Proposed parameters (identification): new R, L, C values also move the level, so the proposed run is
           // shifted to start where the current run starts; then only the dynamics differ.
@@ -391,7 +396,7 @@ function GainSteps({ scenario, update, auto }: { scenario: Scenario; update: (pa
     {!scenario.feedback && <p className="muted small">The gains act once the loop switch is closed.</p>}
     <p className="muted small">A step sets the price PID to Custom. {auto ? 'The canvas runs again at once.' : 'Run again to see the effect.'}</p></>;
 }
-function Inspector({ map, selection, pick, result, pinned, scenario, enter, layer, tf, setTf, update, probes, design, setDesign, onPreview, auto }: { onPreview?: (scale: Record<string, number> | null) => void; auto?: boolean; map: MapData; selection: Selection; pick: (s: Selection) => void; result: Result | null; pinned: Result | null; scenario: Scenario; enter: (id: string) => void; layer: string; tf: TfPicks; setTf: (t: TfPicks) => void; update?: (patch: Partial<Scenario>) => void; probes?: ProbeActions; design?: Design; setDesign?: (d: Design) => void }) {
+function Inspector({ map, selection, pick, result, pinned, scenario, enter, layer, tf, setTf, update, probes, design, setDesign, onPreview, auto, reject }: { onPreview?: (scale: Record<string, number> | null) => void; auto?: boolean; reject?: boolean; map: MapData; selection: Selection; pick: (s: Selection) => void; result: Result | null; pinned: Result | null; scenario: Scenario; enter: (id: string) => void; layer: string; tf: TfPicks; setTf: (t: TfPicks) => void; update?: (patch: Partial<Scenario>) => void; probes?: ProbeActions; design?: Design; setDesign?: (d: Design) => void }) {
   const lines = (signal: string, name: string, color: string): Line[] => {
     if (!result) return [];
     const own = readTrace(result, signal), other = pinned && readTrace(pinned, signal);
@@ -400,7 +405,7 @@ function Inspector({ map, selection, pick, result, pinned, scenario, enter, laye
   const hint = (what: string) => <p className="run-hint">Run the simulation to see {what}.</p>;
   const name = (id: string) => id === 'controller' ? 'Controller' : map.agents[id]?.label ?? id;
   const go = (id: string) => pick({ kind: 'agent', id });
-  if (selection.kind === 'robust') return design ? <Robustness design={{ ...design, K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter }} docked/> : null;
+  if (selection.kind === 'robust') return design ? <><Robustness design={{ ...design, K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter }} docked/>{scenario.feedback && <section className="panel"><NyquistPanel K={[scenario.kp, scenario.ki, scenario.kd]} filtered={scenario.derivative_filter}/></section>}</> : null;
   if (selection.kind === 'ident') return <IdentPanel scenario={scenario} update={update ?? (() => undefined)} onPreview={onPreview} auto={auto}/>;
   if (selection.kind === 'tf') return <TransferPanel input={tf.input} output={tf.output} feedback={scenario.feedback} K={[scenario.kp, scenario.ki, scenario.kd]} filtered={scenario.derivative_filter} swap={() => setTf({ input: tf.output, output: tf.input })} clear={() => setTf({})}/>;
   if (selection.kind === 'probe') {
@@ -468,7 +473,7 @@ function Inspector({ map, selection, pick, result, pinned, scenario, enter, laye
   if (id === 'controller') {
     return <><p className="eyebrow">Outside the system</p><h3>Controller</h3><p className="muted">{map.controller.description}</p>
       {update && <GainSteps scenario={scenario} update={update} auto={auto}/>}
-      {probes && !auto && <div className="step-pick"><h4>Step responses on the canvas</h4>
+      {probes && (!auto || reject) && <div className="step-pick"><h4>{reject ? 'Disturbance rejection: shock in' : 'Step responses on the canvas'}</h4>
         <label>Pinned plots show the response to a unit step in <select value={probes.stepInput} onChange={e => probes.setStepInput(e.target.value)}>
           {scenario.feedback && <option value="y_reference">the target r</option>}<option value="u_open">the controller output u, loop open</option>{map.disturbances.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}</select></label>
         <p className="muted small">{probes.count ? `${probes.count} pinned plot${probes.count > 1 ? 's' : ''} switch to the step response while the controller is selected. Linear model, 15 years${probes.stepInput === 'u_open' ? ', loop open: the market on its own' : scenario.feedback ? ', loop closed' : ', loop open'}.` : 'Click a port, a disturbance or a subsidy arrow to pin a plot; it shows the step response here while you tune.'}</p></div>}
@@ -489,7 +494,7 @@ function Inspector({ map, selection, pick, result, pinned, scenario, enter, laye
     {layout.not_drawn.length > 0 && <p className="not-drawn">Not drawn, not in the circuit: {layout.not_drawn.join(', ')}</p>}</>;
 }
 
-type View = { system: boolean; cpb: boolean; finance: boolean; controller: boolean; agents: string[]; cbs?: boolean; formulas?: boolean };
+type View = { system: boolean; cpb: boolean; finance: boolean; controller: boolean; agents: string[]; cbs?: boolean; formulas?: boolean; noParliament?: boolean };
 const CPB_AGENTS = ['constructors', 'investors', 'firms', 'households'];
 const CHANNEL: Record<string, string> = {
   construction_cost: 'c12', houses: 'c12', consumption: 'c12', income: 'c12', goods: 'c12',
@@ -624,7 +629,8 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     // Open CBS: the two measurements enter where its drawing expects them.
     const xIn = view.cbs ? { a: sensor.y + cbsHead + CBS_Y.x1 * cbsS - gc, b: sensor.y + cbsHead + CBS_Y.x2 * cbsS - gc } : { a: -26, b: 26 };
     block('anchor', { x: group.x, y: group.y, w: 1, h: 1 }, { tone: 'anchor' }, 0);
-    block('parliament', parl, { label: 'Parliament', tone: scenario.feedback ? 'reference' : 'reference loop-off', selected: on({ kind: 'signal', id: 'y_reference' }) });
+    // Parliament can be removed from the drawing (right-click); the summing junction then shows only the feedback.
+    if (!view.noParliament) block('parliament', parl, { label: 'Parliament', tone: scenario.feedback ? 'reference' : 'reference loop-off', selected: on({ kind: 'signal', id: 'y_reference' }) });
     block('sum', sum, { tone: scenario.feedback ? 'summing' : 'summing loop-off' });
     block('controller', ctrl, view.controller
       ? { label: 'Tax Authority · Controller', tone: 'controller', open: true, tab: 'above', headSpace: ctrlHead, toggle: () => toggle('controller'), children: <ControllerCircuit map={map} scenario={scenario} selection={selection} pick={select} step={step}/> }
@@ -638,7 +644,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       block('finance', R.finance, view.finance ? { label: scenario.bank ? 'Financial sector' : 'Financial sector · off', tone: scenario.bank ? 'sub-group' : 'sub-group bank-off', open: true, tab: 'tl', toggle: () => toggle('finance') } : { label: scenario.bank ? 'Financial sector' : 'Financial sector · off', tone: scenario.bank ? 'sub-closed' : 'sub-closed bank-off', toggle: () => toggle('finance') }, view.finance ? 1 : 2);
       const agentBlock = (id: string) => {
         const open = view.agents.includes(id), a = map.agents[id];
-        const circuit = <AgentCircuit map={map} agent={id} scenario={scenario} selection={selection} pick={select} menu={menu} inputs={map.disturbances.filter(d => d.target === id && active(d))} inputSide={id === 'bank' ? 'top' : 'left'} outside highlight={hl?.elements}/>;
+        const circuit = <AgentCircuit map={map} agent={id} scenario={scenario} selection={selection} pick={select} menu={menu} inputs={map.disturbances.filter(d => d.target === id && active(d))} inputSide={id === 'bank' ? 'top' : 'left'} outside highlight={hl?.elements} litFlows={hl?.flows}/>;
         const cards = withEq(id) ? <FormulaCards agent={id} active={hl?.id ?? null} pick={setHl}/> : undefined;
         const sh = strip(id);
         block(id, R[id], open ? { label: a.label, tone: 'agent', open, tab: TAB[id], toggle: () => toggle(id),
@@ -652,12 +658,13 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     }
     // ---- loop signals (two goals when the rental share loop is on)
     const mimo = scenario.feedback && scenario.share_control;
-    lines.y_reference = [[parl.x + parl.w, mainY], [sum.x, mainY]];
-    sig('r', [[parl.x + parl.w, mainY], [sum.x, mainY]], { color: scenario.feedback ? '#2b6599' : '#b8c2bd', dashed: !scenario.feedback, markDist: (sum.x - parl.x - parl.w) / 2, letter: 'r', name: mimo ? 'Targets' : 'Housing target', sub: probes?.stepAt === 'y_reference' ? 'Unit step +1 enters here' : mimo ? 'Price & share r' : 'Reference signal r', value: value('I(Reference)'), labelSide: 'above', selected: on({ kind: 'signal', id: 'y_reference' }), pick: card('y_reference') ?? (() => select({ kind: 'signal', id: 'y_reference' })) });
+    if (!view.noParliament) lines.y_reference = [[parl.x + parl.w, mainY], [sum.x, mainY]];
+    if (!view.noParliament) sig('r', [[parl.x + parl.w, mainY], [sum.x, mainY]], { color: scenario.feedback ? '#2b6599' : '#b8c2bd', dashed: !scenario.feedback, markDist: (sum.x - parl.x - parl.w) / 2, letter: 'r', name: mimo ? 'Targets' : 'Housing target', sub: probes?.stepAt === 'y_reference' ? 'Unit step +1 enters here' : mimo ? 'Price & share r' : 'Reference signal r', value: value('I(Reference)'), labelSide: 'above', selected: on({ kind: 'signal', id: 'y_reference' }), pick: card('y_reference') ?? (() => select({ kind: 'signal', id: 'y_reference' })) });
     sig('e', [[sum.x + sum.w, mainY], [ctrl.x, mainY]], { color: scenario.feedback ? '#1f2a26' : '#b8c2bd', letter: 'e', name: mimo ? 'Gaps' : 'Gap', sub: mimo ? 'Errors e' : 'Error e', value: scenario.feedback ? value('I(Error)') : undefined, dashed: !scenario.feedback, labelSide: 'above', selected: on({ kind: 'signal', id: 'y_error' }), pick: card('y_error') ?? (() => select({ kind: 'signal', id: 'y_error' })) });
     const subsidy = (id: string) => map.flows.find(f => f.id === id)!;
     ([['owner_subsidy', 'u2', u2y], ['rental_subsidy', 'u1', u1y]] as const).forEach(([id, letter, y], i) => {
-      if (id === 'rental_subsidy' && !scenario.rental_subsidy) return; // switched off: no arrow
+      // switched off: no arrow, except in the CPB backbone view, where the subsidy equations point at both subsidies
+      if (id === 'rental_subsidy' && !scenario.rental_subsidy && !view.formulas) return;
       const f = subsidy(id);
       let points: Point[] = [[ctrl.x + ctrl.w, y], [(target ?? group).x, y]];
       if (view.system && view.cpb) {
@@ -769,7 +776,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
 function Canvas({ map, view, setView, scenario, result, at, selection, select, focus, menu, flip, probes, step, steps, lab = 1 }: { lab?: number; map: MapData; view: View; setView: (v: View) => void; scenario: Scenario; result: Result | null; at: number; selection: Selection; select: (s: Selection) => void; focus: { id: string; n: number }; menu: (s: Selection, e: React.MouseEvent) => void; flip: () => void; probes: ProbeState; step: (k: GainKey, up: boolean) => void; steps?: StepData }) {
   const flow = useReactFlow();
   const toggle = (k: string) => {
-    if (k === 'system') setView({ system: !view.system, cpb: false, finance: false, controller: view.controller, agents: [] });
+    if (k === 'system') setView({ system: !view.system, cpb: false, finance: false, controller: view.controller, agents: [], noParliament: view.noParliament });
     else if (k === 'controller') setView({ ...view, controller: !view.controller });
     else if (k === 'cbs') setView({ ...view, cbs: !view.cbs });
     else if (k === 'cpb') setView({ ...view, cpb: !view.cpb, agents: view.agents.filter(a => !CPB_AGENTS.includes(a)) });
@@ -794,6 +801,7 @@ function Canvas({ map, view, setView, scenario, result, at, selection, select, f
     return () => { live = false; clearTimeout(t); };
   }, [focus.n]);
   return <AtContext.Provider value={{ result, at }}><ReactFlow className={hl ? 'hl-on' : undefined} nodes={shown} edges={graph.edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} zoomOnDoubleClick={false} fitView fitViewOptions={{ padding: .04 }} nodesConnectable={false} nodesDraggable={false} elementsSelectable={false} minZoom={.1} maxZoom={4} proOptions={{ hideAttribution: true }}
+    onNodeContextMenu={(e, n) => { if (n.id === 'parliament' || n.id === 'sum') { e.preventDefault(); menu({ kind: 'agent', id: n.id }, e); } }}
     onNodeClick={(_, n) => {
       if (n.id === 'sensor' && view.cbs) return;
       if (n.id === 'sensor') { const at = flow.screenToFlowPosition({ x: _.clientX, y: _.clientY }); probes.addChart({ id: 'cbs', kind: 'cbs' }, { x: at.x - 190, y: at.y - 230 }); }
@@ -809,7 +817,7 @@ const TOUR_CARD = { w: 700, h: 400 };  // plot cards in the guided tour, model u
 const CLOSED: View = { system: false, cpb: false, finance: false, controller: false, agents: [] };
 type TfPicks = { input?: Pick; output?: Pick };
 type MenuState = { x: number; y: number; target: Selection; label: string };
-export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, update, design, setDesign, cbs, lag, left, cpb, tour }: { tour?: { n: number; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean; formulas?: boolean }; scenario: Scenario; result: Result | null; pinned: Result | null; busy: boolean; run: () => void; setFeedback: (on: boolean) => void; update: (patch: Partial<Scenario>) => void; design: Design; setDesign: (d: Design) => void; cbs?: CbsData; lag: number; left?: React.ReactNode; cpb?: { year: number[]; yoy: number[] } }) {
+export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, update, design, setDesign, cbs, lag, left, cpb, tour }: { tour?: { n: number; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean; formulas?: boolean; reject?: string; robust?: boolean }; scenario: Scenario; result: Result | null; pinned: Result | null; busy: boolean; run: () => void; setFeedback: (on: boolean) => void; update: (patch: Partial<Scenario>) => void; design: Design; setDesign: (d: Design) => void; cbs?: CbsData; lag: number; left?: React.ReactNode; cpb?: { year: number[]; yoy: number[] } }) {
   const [leftOpen, setLeftOpen] = useState(true);
   const [map, setMap] = useState<MapData>();
   const [error, setError] = useState('');
@@ -851,7 +859,8 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   useEffect(() => {
     if (!tour) return;
     // expand: the Housing Market fully open, every CPB agent showing its elements (the financial sector too when the bank is on).
-    setViewState(tour.formulas ? { system: true, cpb: true, finance: false, controller: false, agents: [], formulas: true } : tour.expand ? { system: true, cpb: true, finance: scenario.bank, controller: false, agents: scenario.bank ? [...CPB_AGENTS, 'bank'] : [...CPB_AGENTS] } : tour.tuning ? { ...CLOSED, controller: true } : CLOSED); setSelection(tour.ident ? { kind: 'ident', id: '' } : tour.tuning ? { kind: 'agent', id: 'controller' } : NONE); if (tour.ident || tour.tuning) setDock(true); setCharts(tour.cbs ? [{ id: 'cbs', kind: 'cbs' }] : []); setSensed([]); setPinPos({}); setPins(tour.pins); setFocus(f => ({ id: tour.expand || tour.formulas ? 'system' : '', n: f.n + 1 }));
+    if (tour.reject) setStepInput(tour.reject);
+    setViewState(v => ({ ...(tour.formulas ? { system: true, cpb: true, finance: false, controller: false, agents: [], formulas: true } : tour.reject ? { ...CLOSED, controller: true } : tour.expand ? { system: true, cpb: true, finance: scenario.bank, controller: false, agents: scenario.bank ? [...CPB_AGENTS, 'bank'] : [...CPB_AGENTS] } : tour.tuning ? { ...CLOSED, controller: true } : CLOSED), noParliament: v.noParliament })); setSelection(tour.ident ? { kind: 'ident', id: '' } : tour.tuning || tour.reject ? { kind: 'agent', id: 'controller' } : tour.robust ? { kind: 'robust', id: '' } : NONE); if (tour.ident || tour.tuning || tour.reject || tour.robust) setDock(true); setCharts(tour.cbs ? [{ id: 'cbs', kind: 'cbs' }] : []); setSensed([]); setPinPos({}); setPins(tour.pins); setFocus(f => ({ id: tour.expand || tour.formulas ? 'system' : '', n: f.n + 1 }));
   }, [tour?.n]);
   const [bodeFrom, setBodeFrom] = useState<Probe | null>(null);
   const ctx = useMemo<Ctx>(() => ({ K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, feedback: scenario.feedback, settling: design.settling, overshoot: design.overshoot }), [scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.feedback, design.settling, design.overshoot]);
@@ -859,7 +868,9 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   const tuning = selection.kind === 'agent' && selection.id === 'controller';
   // System identification: pinned plots show the open-loop step response to u, as while tuning.
   // In the tour the identification dock sits next to time plots, so the cards stay time plots there.
-  const ident = selection.kind === 'ident', stepping = !tour && (tuning || ident);
+  // Disturbance rejection step of the tour: the cards show step responses to a unit shock (closed loop, open loop grey)
+  const tourReject = !!tour?.reject;
+  const ident = selection.kind === 'ident', stepping = (!tour && (tuning || ident)) || (tourReject && tuning);
   const [stepChoice, setStepInput] = useState('y_reference');
   // Loop open: the target does nothing, so the default step is the controller output u.
   const stepInput = ident ? 'u_open' : !scenario.feedback && stepChoice === 'y_reference' ? 'u_open' : stepChoice;
@@ -868,11 +879,14 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
     if (!stepping || !map || !pins.length) { setSteps(null); return; }
     const outs = pins.map(p => probeInfo(map, p).step).filter(Boolean);
     const timer = window.setTimeout(() => {
-      api<NonNullable<StepData>>('/analysis/steps', { input: { kind: 'signal', id: stepInput }, outputs: outs, feedback: scenario.feedback && stepInput !== 'u_open', K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, scale: { ...(scenario.param_scale ?? {}), ...(scenario.bank ? {} : { NO_BANK: 0 }) } })
-        .then(setSteps).catch(e => setSteps({ input: '', responses: Object.fromEntries(outs.map(o => [`${o!.kind}:${o!.id}`, { error: (e as Error).message }])) }));
+      const ask = (feedback: boolean) => api<NonNullable<StepData>>('/analysis/steps', { input: { kind: 'signal', id: stepInput }, outputs: outs, feedback, K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, scale: { ...(scenario.param_scale ?? {}), ...(scenario.bank ? {} : { NO_BANK: 0 }) } });
+      const closed = scenario.feedback && stepInput !== 'u_open';
+      // Disturbance rejection (tour): the same unit shock without the controller, for comparison (grey dashed)
+      Promise.all([ask(closed), tourReject && closed ? ask(false) : Promise.resolve(null)])
+        .then(([c, o]) => setSteps({ ...c, inputId: stepInput, ...(o ? { open: o.responses } : {}) })).catch(e => setSteps({ input: '', responses: Object.fromEntries(outs.map(o => [`${o!.kind}:${o!.id}`, { error: (e as Error).message }])) }));
     }, 120);
     return () => clearTimeout(timer);
-  }, [stepping, map, pins, stepInput, scenario.feedback, scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.param_scale, scenario.bank]);
+  }, [stepping, map, pins, stepInput, scenario.feedback, scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.param_scale, scenario.bank, tourReject]);
   const stepGain = useCallback((k: GainKey, up: boolean) => latest.current.update(stepPatch(latest.current.scenario, k, up)), []);
   const same = (a: Probe) => (b: Probe) => a.flow === b.flow && a.q === b.q;
   const toggleIn = (set: React.Dispatch<React.SetStateAction<Probe[]>>) => (p: Probe) => set(old => old.some(same(p)) ? old.filter(x => !same(p)(x)) : [...old, p]);
@@ -916,7 +930,7 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   return <section className="panel map-panel">
     <div className="map-head"><div className="row">
       <button className="ghost" onClick={() => setFocus(f => ({ id: '', n: f.n + 1 }))}><Maximize2 size={14}/> Whole model</button>
-      <button className="ghost" disabled={!view.system && !view.controller} onClick={() => setView(CLOSED)}><Minus size={14}/> Collapse all</button>
+      <button className="ghost" disabled={!view.system && !view.controller} onClick={() => setView({ ...CLOSED, noParliament: view.noParliament })}><Minus size={14}/> Collapse all</button>
       <button className={ident ? 'secondary' : 'ghost'} title="Open loop: poles and step response from the subsidy to the house price, and change the model parameters" onClick={() => { if (ident) { setSelection({ kind: 'none', id: '' }); return; } setDock(true); setSelection({ kind: 'ident', id: '' }); setPins(old => old.some(p => p.flow === 'y_price' && p.q === 's') ? old : [...old, { flow: 'y_price', q: 's' }]); }}><Activity size={14}/> Identify system</button>
       <button className={selection.kind === 'robust' ? 'secondary' : 'ghost'} title="S, T and KS of the current controller against the limits, and random markets, in the side panel" onClick={() => { if (selection.kind === 'robust') { setSelection({ kind: 'none', id: '' }); return; } setDock(true); setSelection({ kind: 'robust', id: '' }); }}><ShieldCheck size={14}/> Robustness</button>
       <button className="ghost" data-no-shot title="Save the canvas (and the open side panels) as a high-resolution PNG (3x)" disabled={shooting} onClick={shootCanvas}>{shooting ? <LoaderCircle className="spin" size={14}/> : <Camera size={14}/>} Screenshot canvas</button>
@@ -929,15 +943,22 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
         : <button className="dock-handle" data-no-shot aria-label="Open scenario panel" title="Open scenario panel" onClick={() => setLeftOpen(true)}><ChevronRight size={16}/><span>Scenario</span></button>)}
       <div className="map-canvas" ref={canvasRef} style={{ ['--lab' as string]: lab }} onClick={() => setMenuAt(null)}><ReactFlowProvider><Canvas map={map} view={view} setView={setView} scenario={scenario} result={result} at={at} selection={selection} select={setSelection} focus={focus} menu={openMenu} flip={() => setFeedback(!scenario.feedback)} probes={probeState} step={stepGain} steps={stepping ? steps : null} lab={lab}/></ReactFlowProvider>
         {menuAt && <div className="ctx-menu" role="menu" style={{ left: menuAt.x, top: menuAt.y }} onClick={e => e.stopPropagation()}>
+          {menuAt.target.kind === 'agent' && (menuAt.target.id === 'parliament' || menuAt.target.id === 'sum') ? <>
+            <p>{menuAt.target.id === 'parliament' ? 'Parliament' : 'Summing junction'}</p>
+            {menuAt.target.id === 'parliament' && <button role="menuitem" onClick={() => { setView({ ...view, noParliament: true }); setMenuAt(null); }}>Remove Parliament</button>}
+            {menuAt.target.id === 'sum' && <button role="menuitem" disabled={!view.noParliament} onClick={() => { setView({ ...view, noParliament: false }); setMenuAt(null); }}>Show Parliament again</button>}
+          </> : <>
           <p>{labelOf(menuAt.target)}</p>
           <button role="menuitem" disabled={menuAt.target.kind === 'element' && !/^(I|V)/.test(menuAt.target.id) || (menuAt.target.kind === 'signal' && !menuAt.target.id.startsWith('d_'))} onClick={() => choose('input')}>Use as input</button>
           <button role="menuitem" disabled={menuAt.target.kind === 'signal' && menuAt.target.id.startsWith('d_')} onClick={() => choose('output')}>Use as output</button>
           <button role="menuitem" onClick={() => { setSelection(menuAt.target); setMenuAt(null); }}>Plot over time</button>
           {menuAt.target.kind === 'flow' && map.flows.some(f => f.id === menuAt.target.id && (f.source === 'bank' || f.target === 'bank')) && <button role="menuitem" onClick={() => { update({ bank: !scenario.bank }); setMenuAt(null); }}>{scenario.bank ? 'Close the bank ports (original CPB model)' : 'Reopen the bank ports'}</button>}
+          </>}
         </div>}
+        {view.noParliament && <button className="ghost small show-parl" data-no-shot onClick={() => setView({ ...view, noParliament: false })}>Show Parliament</button>}
         <div className="map-key"><span className="k money">Money port pair</span><span className="k real">Goods port pair</span><span className="k shock">d: shock</span><span className="k policy">u: subsidy</span><span className="muted">f: flow, e: incentive. Click + or a block to open it in place. Right-click two flows for a transfer function.</span></div>
       </div>
-      {dock ? <aside className="inspector" aria-live="polite"><button className="dock-toggle" aria-label="Collapse panel" title="Collapse panel" onClick={() => setDock(false)}><Minus size={14}/></button><Inspector map={map} selection={selection} pick={setSelection} result={result} pinned={pinned} scenario={scenario} enter={enter} layer="" tf={tf} setTf={setTf} update={update} probes={actions} design={design} setDesign={setDesign} onPreview={setPreviewScale} auto={!!tour}/></aside>
+      {dock ? <aside className="inspector" aria-live="polite"><button className="dock-toggle" aria-label="Collapse panel" title="Collapse panel" onClick={() => setDock(false)}><Minus size={14}/></button><Inspector map={map} selection={selection} pick={setSelection} result={result} pinned={pinned} scenario={scenario} enter={enter} layer="" tf={tf} setTf={setTf} update={update} probes={actions} design={design} setDesign={setDesign} onPreview={setPreviewScale} auto={!!tour} reject={tourReject}/></aside>
         : <button className="dock-handle" data-no-shot aria-label="Open panel" title="Open panel" onClick={() => setDock(true)}><ChevronLeft size={16}/><span>Panel</span></button>}
     </div>
   </section>;

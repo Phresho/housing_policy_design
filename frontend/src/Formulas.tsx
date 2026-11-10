@@ -26,7 +26,7 @@ export const FORMULAS: Record<string, Formula[]> = {
     { id: 'budget', title: 'Budget', no: '2.1', tex: 'b = w_k h_k + w_h h_h + p_x x',
       note: 'every flow into and out of the households',
       flows: ['rent', 'imputed_rent', 'rental_services', 'owner_services', 'consumption', 'income', 'goods', 'savings', 'savings_interest', 'rental_subsidy', 'owner_subsidy'],
-      elements: ['L§Income', 'L§Consumption', 'L§Rent', 'L§Imputed_rent'] },
+      elements: ['L§Income', 'L§Consumption', 'L§Rent', 'L§Imputed_rent', 'I§Owner_occupied_subsidies', 'I§Rental_subsidies1'] },
     { id: 'subsidy', title: 'Subsidy formula', no: '2.6', tex: 'w_{k,h} = w^{*}_{k,h}\\,(1 - s_{k,h})',
       note: 'sₖ owner-occupied, sₕ rental subsidy rate: the Tax Authority’s inputs',
       flows: ['owner_subsidy', 'rental_subsidy', 'rent', 'imputed_rent'], elements: ['I§Owner_occupied_subsidies', 'I§Rental_subsidies1', 'B§PID'] },

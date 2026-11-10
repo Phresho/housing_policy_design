@@ -66,18 +66,53 @@ export function inputPath(side: 'left' | 'top', i: number, n: number, size: [num
   if (side === 'left') { const y = h * (i + 1) / (n + 1); return Math.abs(y - cy) < gap ? [[0, y], [cx - gap, y]] : [[0, y], [cx, y], [cx, cy + (y < cy ? -gap : gap)]]; }
   const x = w * (i + 1) / (n + 1); return Math.abs(x - cx) < gap ? [[x, 0], [x, cy - gap]] : [[x, 0], [x, cy], [cx + (x < cx ? -gap : gap), cy]];
 }
+// Wires that carry a flow inside an agent drawing: start at the flow's port (or its return point), follow connected
+// wire segments (shared ends and T-junctions), pass through the flow's own chain elements (pin to pin) and stop at
+// any other element. Claude's tracing of the drawing, for the equation highlight.
+type Seg = number[];
+const near = (a: number[], b: number[]) => Math.abs(a[0] - b[0]) < .5 && Math.abs(a[1] - b[1]) < .5;
+const onSeg = (p: number[], w: Seg) => Math.abs((w[2] - w[0]) * (p[1] - w[1]) - (w[3] - w[1]) * (p[0] - w[0])) < .5 * Math.hypot(w[2] - w[0], w[3] - w[1]) + 1e-9
+  && p[0] >= Math.min(w[0], w[2]) - .5 && p[0] <= Math.max(w[0], w[2]) + .5 && p[1] >= Math.min(w[1], w[3]) - .5 && p[1] <= Math.max(w[1], w[3]) + .5;
+function traceFlow(segs: Seg[], start: number[], pins: { name: string; pins: number[][] }[], chain: Set<string>): Set<number> {
+  const lit = new Set<number>(), seen: number[][] = [], todo: number[][] = [start];
+  while (todo.length) {
+    const p = todo.pop()!;
+    if (seen.some(q => near(q, p))) continue;
+    seen.push(p);
+    const el = pins.find(e => e.pins.some(q => near(q, p)));
+    if (el && !near(p, start)) {
+      if (!chain.has(el.name)) continue;                      // another element: the flow stops here
+      el.pins.forEach(q => { if (!near(q, p)) todo.push(q); });  // through its own element to the other pin
+    }
+    segs.forEach((w, i) => {
+      if (!onSeg(p, w)) return;
+      lit.add(i); todo.push([w[0], w[1]], [w[2], w[3]]);
+      segs.forEach(v => { [[v[0], v[1]], [v[2], v[3]]].forEach(q => { if (onSeg(q, w)) todo.push(q); }); });  // T-junctions on this segment
+    });
+  }
+  return lit;
+}
 const SHOCK_RED = '#c5352a', SUBSIDY_BLUE = '#1f6fc4';
-export function AgentCircuit({ map, agent, scenario, selection, pick, menu, inputs = [], inputSide = 'left', outside = false, highlight = [] }: { outside?: boolean; highlight?: string[]; map: MapData; agent: string; scenario: Scenario; selection: Selection; pick: (s: Selection) => void; menu?: (s: Selection, ev: React.MouseEvent) => void; inputs?: { id: string; label: string; element?: string }[]; inputSide?: 'left' | 'top' }) {
+export function AgentCircuit({ map, agent, scenario, selection, pick, menu, inputs = [], inputSide = 'left', outside = false, highlight = [], litFlows = [] }: { outside?: boolean; highlight?: string[]; litFlows?: string[]; map: MapData; agent: string; scenario: Scenario; selection: Selection; pick: (s: Selection) => void; menu?: (s: Selection, ev: React.MouseEvent) => void; inputs?: { id: string; label: string; element?: string }[]; inputSide?: 'left' | 'top' }) {
   const layout = map.layouts[agent], [w, h] = layout.size;
   const hidden = (e: Element) => (e.name === 'I§Owner_occupied_subsidies' && scenario.feedback) || (e.name === 'B§PID' && !scenario.feedback);
   const elements = map.elements.filter(e => e.agent === agent && !hidden(e));
   const flow = (id: string) => map.flows.find(f => f.id === id)!;
   const line = (w: number[]) => `M${w[0]} ${w[1]}L${w[2]} ${w[3]}`;
+  // Lit flows (equation highlight): the wires carrying them, coloured like their rails, and their chain elements
+  const pinsOf = elements.filter(e => e.pins && e.pins.length >= 2).map(e => ({ name: e.name, pins: e.pins! }));
+  const flowsHere = litFlows.map(id => map.flows.find(f => f.id === id)).filter((f): f is NonNullable<typeof f> => !!f && !!layout.ports[f.id]);
+  const litW = new Map<number, string>(), litR = new Map<number, string>(), chainLit = new Set<string>();
+  const KIND_COLOR: Record<string, string> = { money: '#3f8f4f', real: '#c8861a', policy: '#1f6fc4' };
+  flowsHere.forEach(f => { const chain = new Set(f.chain), col = KIND_COLOR[f.kind] ?? '#2b6599'; f.chain.forEach(n => chainLit.add(n));
+    traceFlow(layout.wires, layout.ports[f.id], pinsOf, chain).forEach(i => litW.set(i, col));
+    if (layout.returns[f.id]) traceFlow(layout.return_wires, layout.returns[f.id], pinsOf, chain).forEach(i => litR.set(i, col)); });
   return <svg className="circuit embedded" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label={`${map.agents[agent].label} circuit`}>
     {BREADBOARD}<rect x={0} y={0} width={w} height={h} fill="url(#breadboard)"/>
     <defs>{([['shock', SHOCK_RED], ['subsidy', SUBSIDY_BLUE]] as const).map(([k, c]) => <marker key={k} id={`in-${agent}-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="22" markerHeight="22" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 10 5 0 10z" fill={c}/></marker>)}</defs>
     <g className="return-wires">{[...layout.return_wires, ...layout.common_returns].map((r, i) => <path key={i} d={line(r)}/>)}{layout.dots.map(([x, y], i) => <circle key={`d${i}`} className="return-dot" cx={x} cy={y} r={5}/>)}</g>
     <g className="wires">{layout.wires.map((r, i) => <path key={i} d={line(r)}/>)}</g>
+    {(litW.size > 0 || litR.size > 0) && <g className="lit-wires">{[...litR].map(([i, c]) => <path key={'r' + i} className="ret" stroke={c} d={line(layout.return_wires[i])}/>)}{[...litW].map(([i, c]) => <path key={'w' + i} stroke={c} d={line(layout.wires[i])}/>)}</g>}
     <g className="grounds">{layout.grounds.map(([x, y], i) => <path key={i} d={`M${x - 14} ${y}H${x + 14}L${x} ${y + 16}Z`}/>)}</g>
     {/* outside: the canvas draws the subsidy and shock arrows straight through to the element (one unbroken arrow) */}
     {!outside && layout.signals.filter(sig => sig.flow !== 'rental_subsidy' || scenario.rental_subsidy).map(sig => <g key={sig.flow} className={`u-signal${selection.kind === 'flow' && selection.id === sig.flow ? ' selected' : ''}`} role="button" tabIndex={0} aria-label={`Control signal ${flow(sig.flow).label}`} onClick={ev => { ev.stopPropagation(); pick({ kind: 'flow', id: sig.flow }); }} onContextMenu={ev => { if (menu) { ev.preventDefault(); ev.stopPropagation(); menu({ kind: 'flow', id: sig.flow }, ev); } }}>
@@ -86,7 +121,7 @@ export function AgentCircuit({ map, agent, scenario, selection, pick, menu, inpu
       const pts = inputPath(inputSide, i, inputs.length, [w, h], e.pins);
       return <g key={d.id} className={`d-input${selection.kind === 'signal' && selection.id === d.id ? ' selected' : ''}`} role="button" tabIndex={0} aria-label={`Disturbance ${d.label} enters at ${e.name}`} onClick={ev => { ev.stopPropagation(); pick({ kind: 'signal', id: d.id }); }}>
         <title>{`${d.label} enters here`}</title><path d={pts.map(([x, y], j) => `${j ? 'L' : 'M'}${x} ${y}`).join('')} markerEnd={`url(#in-${agent}-shock)`}/></g>; })}
-    {elements.map(e => <ElementView key={e.name} e={e} state={stateOf(e, scenario)} selected={(selection.kind === 'element' && selection.id === e.name) || highlight.includes(e.name)} pick={() => pick({ kind: 'element', id: e.name })} menu={menu && (ev => menu({ kind: 'element', id: e.name }, ev))}/>)}
+    {elements.map(e => <ElementView key={e.name} e={e} state={stateOf(e, scenario)} selected={(selection.kind === 'element' && selection.id === e.name) || highlight.includes(e.name) || chainLit.has(e.name)} pick={() => pick({ kind: 'element', id: e.name })} menu={menu && (ev => menu({ kind: 'element', id: e.name }, ev))}/>)}
   </svg>;
 }
 
