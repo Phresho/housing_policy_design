@@ -497,8 +497,8 @@ function Inspector({ map, selection, pick, result, pinned, scenario, enter, laye
         <p className="muted small">{probes.count ? `${probes.count} pinned plot${probes.count > 1 ? 's' : ''} switch to the step response while the controller is selected. Linear model, 15 years${probes.stepInput === 'u_open' ? ', loop open: the market on its own' : scenario.feedback ? ', loop closed' : ', loop open'}.` : 'Click a port, a disturbance or a subsidy arrow to pin a plot; it shows the step response here while you tune.'}</p></div>}
       {probes && <button className="secondary sens-pin" onClick={probes.addSens}>{probes.hasSens ? 'Remove S, T, KS from the canvas' : 'Pin S, T, KS on the canvas'}</button>}
       {update && design && setDesign && <ControllerLocus K={[scenario.kp, scenario.ki, scenario.kd]} filtered={scenario.derivative_filter} design={design} setDesign={setDesign}
-        setK={(K: K3, preset?: string) => { update(preset ? { controller: preset as Scenario['controller'], kp: K[0], ki: K[1], kd: K[2] } : { controller: 'custom', kp: K[0], ki: Math.max(0.01, K[1]), kd: K[2] }); setDesign({ ...design, K, filtered: scenario.derivative_filter }); }}/>}
-      {scenario.feedback && <NyquistPanel K={[scenario.kp, scenario.ki, scenario.kd]} filtered={scenario.derivative_filter}/>}
+        setK={(K: K3, preset?: string) => { update(preset ? { controller: preset as Scenario['controller'], kp: K[0], ki: K[1], kd: K[2] } : { controller: 'custom', kp: K[0], ki: Math.max(0.01, K[1]), kd: K[2] }); setDesign({ ...design, K, filtered: scenario.derivative_filter }); }}
+        below={scenario.feedback ? <NyquistPanel K={[scenario.kp, scenario.ki, scenario.kd]} filtered={scenario.derivative_filter}/> : null}/>}
       <h4>Sends</h4><div className="chain">{map.flows.filter(f => f.source === 'controller').map(f => <button key={f.id} onClick={() => pick({ kind: 'flow', id: f.id })}>{f.label}</button>)}</div>
       {layer !== 'controller' && <button className="secondary open-agent" onClick={() => enter('controller')}>Show inside <ChevronRight size={15}/></button>}</>;
   }

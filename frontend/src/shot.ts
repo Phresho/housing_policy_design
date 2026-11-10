@@ -9,6 +9,11 @@ export async function savePng(el: HTMLElement, name: string): Promise<void> {
   let bg = getComputedStyle(el).backgroundColor;
   if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') bg = getComputedStyle(document.body).backgroundColor || '#ffffff';
   const hidden = [...document.querySelectorAll<HTMLElement>('[data-no-shot], .react-flow__controls, .dock-toggle')];
+  // The copy that is drawn starts every scroll box at the top; shift the content of scrolled boxes (the docks) up by
+  // their scroll offset, so the image shows what is on screen.
+  const scrolled = [el, ...el.querySelectorAll<HTMLElement>('*')].filter(n => n.scrollTop > 0 && n !== el);
+  const shifted = scrolled.flatMap(n => { const st = n.scrollTop; n.scrollTop = 0;
+    return [...n.children].map(c => { const k = c as HTMLElement, t = k.style.transform; k.style.transform = `translateY(${-st}px)`; return { k, t, n, st }; }); });
   document.documentElement.classList.add('shooting');  // no scrollbars in the image (style.css)
   const before = hidden.map(n => n.style.visibility);
   hidden.forEach(n => { n.style.visibility = 'hidden'; });
@@ -18,6 +23,8 @@ export async function savePng(el: HTMLElement, name: string): Promise<void> {
     a.href = url; a.download = `${name}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`; a.click();
   } finally {
     hidden.forEach((n, i) => { n.style.visibility = before[i]; });
+    shifted.forEach(({ k, t }) => { k.style.transform = t; });
+    shifted.forEach(({ n, st }) => { n.scrollTop = st; });
     document.documentElement.classList.remove('shooting');
   }
 }

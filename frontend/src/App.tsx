@@ -301,7 +301,7 @@ export default function App() {
       </>}
       <div className="spacer"/>
     </main>
-    <footer className="action-bar"><div className="row"><span className="muted small">One canvas: scenario and policy left, analyses on the canvas and right, results below.</span></div>
+    <footer className="action-bar" data-no-shot><div className="row"><span className="muted small">One canvas: scenario and policy left, analyses on the canvas and right, results below.</span></div>
       <div className="row"><button className="ghost" disabled={busy} onClick={save}><Save size={15}/> Save</button>{result && <button className="ghost" onClick={exportRun}><Download size={15}/> Export</button>}<button className="secondary" disabled={busy} onClick={both}><GitCompare size={15}/> Run open and closed</button><button className="primary" disabled={busy} onClick={simulate}>{busy ? <LoaderCircle className="spin" size={15}/> : <Play size={15}/>} Run simulation</button></div></footer>
     {library && <div className="backdrop"><section className="modal" role="dialog" aria-modal="true" aria-label="Saved scenarios"><div className="policy-head"><h2>Saved scenarios</h2><button className="ghost" aria-label="Close" onClick={() => setLibrary(false)}><X size={16}/></button></div>
       <label className="name">Name for the next save<input value={s.name} maxLength={80} onChange={e => update({ name: e.target.value })}/></label>

@@ -236,7 +236,7 @@ export function PoleDesign({ design, setDesign, useInSimulation }: { design: Des
 // ---------- robustness
 interface MonteCarlo { n: number; perturb: number; stable: number; fraction: number; curves: { stable: boolean; S: number[] }[] }
 /** Root locus in the controller's dock: the same plot and spec lines as the Root locus page, driven by the simulation's own PID gains. */
-export function ControllerLocus({ K, filtered, setK, design, setDesign }: { K: K3; filtered: boolean; setK: (K: K3, preset?: string) => void; design: Design; setDesign: (d: Design) => void }) {
+export function ControllerLocus({ K, filtered, setK, design, setDesign, below }: { K: K3; filtered: boolean; setK: (K: K3, preset?: string) => void; design: Design; setDesign: (d: Design) => void; below?: React.ReactNode }) {
   const [ov, setOv] = useState<Overview>(); const [err, setErr] = useState('');
   const [showLocus, setShowLocus] = useState(false), [showZeros, setShowZeros] = useState(true), [tuning, setTuning] = useState('');
   useEffect(() => { getOverview().then(setOv).catch(e => setErr(e.message)); }, []);
@@ -252,6 +252,7 @@ export function ControllerLocus({ K, filtered, setK, design, setDesign }: { K: K
   return <div className="dock-locus">
     <h4>Root locus <small className="muted">closed-loop poles of the price loop</small></h4>
     <PolePlot ev={ev} ov={ov} spec={{ settling: design.settling, overshoot: design.overshoot, minCycle: design.minCycle }} setSpec={s => setDesign({ ...design, settling: s.settling, overshoot: s.overshoot, minCycle: s.minCycle })} showLocus={showLocus} showOpen={true} showZeros={showZeros}/>
+    {below}
     {error && <p className="state-note">{error}</p>}
     {ev && <div className={'verdict ' + (!ev.stable ? 'bad' : ev.outside ? 'warn' : 'good')}>{!ev.stable ? 'Unstable: a pole lies right of the axis.' : ev.outside ? `Stable. ${ev.outside} pole${ev.outside > 1 ? 's are' : ' is'} not admissible.` : 'Stable. Every pole is admissible.'}</div>}
     <div className="spec-inputs">

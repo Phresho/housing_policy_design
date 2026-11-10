@@ -35,7 +35,7 @@ export function NyquistPanel({ K, filtered }: { K: [number, number, number]; fil
     if (d.gm) {
       data.push({ type: 'scatter', mode: 'markers', showlegend: false, x: [d.gm.re], y: [0], marker: { size: 9, color: GM_C }, hoverinfo: 'skip' });
       shapes.push({ type: 'line', x0: -1, x1: d.gm.re, y0: 0, y1: 0, line: { color: GM_C, width: 3 } });
-      notes.push({ x: (d.gm.re - 1) / 2, y: 0, yshift: -16, text: `GM ${f(d.gm.ratio)} (${f(d.gm.db, 1)} dB)`, showarrow: false, font: { color: GM_C, size: 12 } });
+      notes.push({ x: -1, y: 0, xanchor: 'right', yanchor: 'bottom', xshift: -4, yshift: 6, text: `GM ${f(d.gm.ratio)} (${f(d.gm.db, 1)} dB)`, showarrow: false, font: { color: GM_C, size: 12 }, bgcolor: 'rgba(255,255,255,.85)' });
     }
     if (d.pm) {
       // arc on the unit circle from -1 to the gain crossing
@@ -44,14 +44,14 @@ export function NyquistPanel({ K, filtered }: { K: [number, number, number]; fil
       data.push({ type: 'scatter', mode: 'lines', showlegend: false, x: arc.map(Math.cos), y: arc.map(Math.sin), line: { color: PM_C, width: 3 }, hoverinfo: 'skip' },
         { type: 'scatter', mode: 'markers', showlegend: false, x: [d.pm.re], y: [d.pm.im], marker: { size: 9, color: PM_C }, hoverinfo: 'skip' });
       const mid = arc[20];
-      notes.push({ x: 1.18 * Math.cos(mid), y: 1.18 * Math.sin(mid), text: `PM ${f(d.pm.deg, 0)}°`, showarrow: false, font: { color: PM_C, size: 12 } });
+      notes.push({ x: Math.cos(mid), y: Math.sin(mid), xanchor: 'right', xshift: -8, text: `PM ${f(d.pm.deg, 0)}°`, showarrow: false, font: { color: PM_C, size: 12 }, bgcolor: 'rgba(255,255,255,.85)' });
     }
     const layout = {
       paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { family: 'Inter, system-ui, sans-serif', size: 12, color: '#3c4a45' },
-      height: 360, margin: { l: 48, r: 12, t: 8, b: 40 }, hovermode: 'closest', shapes, annotations: notes,
+      height: 320, margin: { l: 44, r: 10, t: 6, b: 34 }, hovermode: 'closest', shapes, annotations: notes,
       xaxis: { title: { text: 'Re L' }, range: [-3, 1.5], zeroline: true, zerolinecolor: '#aab5b0', gridcolor: '#e8ece9' },
       yaxis: { title: { text: 'Im L' }, range: [-2.2, 2.2], scaleanchor: 'x', zeroline: true, zerolinecolor: '#aab5b0', gridcolor: '#e8ece9' },
-      legend: { orientation: 'h', y: -0.2, font: { size: 11 } },
+      legend: { orientation: 'h', y: -0.3, yanchor: 'top', font: { size: 11 } },
     };
     void import('plotly.js-dist-min').then(({ default: Plotly }) => { if (live && box.current) Plotly.react(box.current, data, layout, { displayModeBar: false, responsive: true }); });
     return () => { live = false; };
