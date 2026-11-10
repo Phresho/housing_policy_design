@@ -36,7 +36,7 @@ function useDebounced<T>(fn: () => Promise<T>, deps: unknown[], delay = 140) {
 
 // ---------- generic plot with a cycle-length axis
 export interface Trace { name: string; x: number[]; y: number[]; color: string; dash?: string; width?: number; fill?: string; fillcolor?: string; showlegend?: boolean; opacity?: number; hover?: boolean }
-export function Plot({ traces, height = 260, xTitle, yTitle, logX = false, logY = false, reverseX = false, xRange, yRange, shapes = [], notes = [], label, legendY = -0.3 }: { legendY?: number; traces: Trace[]; height?: number; xTitle: string; yTitle: string; logX?: boolean; logY?: boolean; reverseX?: boolean; xRange?: [number, number]; yRange?: [number, number]; shapes?: object[]; notes?: object[]; label: string }) {
+export function Plot({ traces, height = 260, xTitle, yTitle, logX = false, logY = false, reverseX = false, xRange, yRange, shapes = [], notes = [], label, legendY = -0.3, compact = false }: { compact?: boolean; legendY?: number; traces: Trace[]; height?: number; xTitle: string; yTitle: string; logX?: boolean; logY?: boolean; reverseX?: boolean; xRange?: [number, number]; yRange?: [number, number]; shapes?: object[]; notes?: object[]; label: string }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let live = true; const node = box.current;
@@ -46,14 +46,14 @@ export function Plot({ traces, height = 260, xTitle, yTitle, logX = false, logY 
       const xr = range(xRange, logX);
       Plotly.react(node, traces.map(t => ({ type: 'scatter', mode: 'lines', name: t.name, x: t.x, y: t.y, opacity: t.opacity ?? 1, showlegend: t.showlegend ?? true, fill: t.fill, fillcolor: t.fillcolor,
         line: { color: t.color, dash: t.dash ?? 'solid', width: t.width ?? 2.4 }, hoverinfo: t.hover === false ? 'skip' : undefined, hovertemplate: t.hover === false ? undefined : `%{x:.2f} → %{y:.3g}<extra>${t.name}</extra>` })), {
-        height, margin: { l: 62, r: 14, t: 6, b: 48 }, paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { family: 'Inter, system-ui, sans-serif', size: 12, color: '#3c4a45' },
+        height, margin: compact ? { l: 46, r: 8, t: 4, b: 34 } : { l: 62, r: 14, t: 6, b: 48 }, paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { family: 'Inter, system-ui, sans-serif', size: compact ? 10 : 12, color: '#3c4a45' }, showlegend: !compact,
         legend: { orientation: 'h', y: legendY, yanchor: 'top' }, hovermode: 'closest', shapes, annotations: notes,
         xaxis: { title: { text: xTitle }, type: logX ? 'log' : 'linear', gridcolor: '#e8ece9', zeroline: false, range: xr && (reverseX ? [xr[1], xr[0]] : xr), autorange: xr ? false : reverseX ? 'reversed' : true, ...(logX ? { tickvals: [0.2, 0.5, 1, 2, 5, 10, 20, 50, 100], ticktext: ['0.2', '0.5', '1', '2', '5', '10', '20', '50', '100'] } : {}) },
         yaxis: { title: { text: yTitle }, type: logY ? 'log' : 'linear', gridcolor: '#e8ece9', zerolinecolor: '#aab5b0', range: range(yRange, logY), exponentformat: 'power', ...(logY ? { dtick: 1 } : {}) },
       }, { displayModeBar: false, responsive: true });
     });
     return () => { live = false; };
-  }, [traces, height, xTitle, yTitle, logX, logY, reverseX, xRange, yRange, shapes, notes]);
+  }, [traces, height, xTitle, yTitle, logX, logY, reverseX, xRange, yRange, shapes, notes, compact, legendY]);
   return <div ref={box} style={{ minHeight: height }} role="img" aria-label={label}/>;
 }
 const within = (cyc: number[], ys: number[], lo: number, hi: number) => { const x: number[] = [], y: number[] = []; cyc.forEach((c, i) => { if (c >= lo && c <= hi) { x.push(c); y.push(ys[i]); } }); return { x, y }; };
@@ -299,12 +299,13 @@ export function Robustness({ design, docked = false }: { design: Design; docked?
   if (!ov || !panels || !curves) return <section className="panel"><p className="muted"><LoaderCircle className="spin" size={14}/> Building the linear model and 150 random markets (about 15 seconds the first time)…</p>{error && <p className="state-note">{error}</p>}</section>;
   const card = (key: 'S' | 'T' | 'KS', title: string, meaning: string, yTitle: string) => {
     const v = curves.d.limits[key];
-    return <section className="panel robust-card"><div className="robust-head"><div><h3 style={{ color: COLORS[key] }}>{title}</h3><p className="muted small">{meaning}</p></div><div className={'light ' + (v <= 1 ? 'ok' : 'bad')}><span aria-hidden="true"/>Your design<b>{num(v)}</b></div></div>
-      <Plot label={title} traces={panels[key].traces} shapes={panels[key].shapes} notes={panels[key].notes} height={docked ? 330 : 330} legendY={docked ? -0.42 : -0.3} xTitle="Cycle length of the shock [years]" yTitle={yTitle} logX logY reverseX xRange={[0.2, 60]} yRange={key === 'KS' ? [0.1, 300] : [0.01, 20]}/></section>;
+    return <section className="panel robust-card"><div className="robust-head"><div><h3 style={{ color: COLORS[key] }} title={docked ? meaning : undefined}>{title}</h3>{!docked && <p className="muted small">{meaning}</p>}</div><div className={'light ' + (v <= 1 ? 'ok' : 'bad')}><span aria-hidden="true"/>Your design<b>{num(v)}</b></div></div>
+      <Plot label={title} traces={panels[key].traces} shapes={panels[key].shapes} notes={panels[key].notes} height={docked ? 190 : 330} compact={docked} legendY={-0.3} xTitle={docked ? 'Cycle length [years]' : 'Cycle length of the shock [years]'} yTitle={yTitle} logX logY reverseX xRange={[0.2, 60]} yRange={key === 'KS' ? [0.1, 300] : [0.01, 20]}/></section>;
   };
   const pct = (m: MonteCarlo) => `${Math.round(m.fraction * 100)}% stable (${m.stable} of ${m.n})`;
   return <div className={docked ? 'robust-docked' : 'robust-page'}>
-    <section className="panel"><h2>Robustness: does the policy survive a wrong model?</h2><p className="muted">Three curves against the cycle length of a shock, long cycles on the left. A design meets a limit when its curve stays out of the shaded area. Your design comes from the Root locus page.</p></section>
+    {docked ? <div className="robust-legend"><span><i style={{ borderColor: COLORS.spec, borderTopStyle: 'dashed' }}/>limit (shaded: not met)</span><span><i style={{ borderColor: COLORS.zn }}/>Ziegler–Nichols</span><span><i style={{ borderColor: COLORS.hinf }}/>H∞ PID</span><span><i style={{ borderColor: COLORS.design, borderTopStyle: 'dotted' }}/>your design</span></div>
+      : <section className="panel"><h2>Robustness: does the policy survive a wrong model?</h2><p className="muted">Three curves against the cycle length of a shock, long cycles on the left. A design meets a limit when its curve stays out of the shaded area. Your design comes from the Root locus page.</p></section>}
     <div className="robust-grid">
       {card('S', 'S · shock passes through', 'How much of a price shock of that cycle length survives the policy. Small is good: the government fights cycles longer than about 3 years.', '|S|')}
       {card('T', 'T · reaction to the model', 'How strongly the policy acts on what the model says. It must be small where the model is wrong, for cycles shorter than about 1.5 years.', '|T|')}
