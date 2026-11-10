@@ -75,7 +75,7 @@ export function YoyBody({ year, model, cbs, lag, cpb, w = 356, h = 150, k = 1, g
     {cbs && cy.map((t, i) => t >= x0 && t <= x1 && <rect key={i} x={sx(t) - bw * .4} width={bw * .8} y={Math.min(sy(0), sy(cbs.yoy[i]))} height={Math.abs(sy(cbs.yoy[i]) - sy(0))} fill="#c4c9c6"/>)}
     {cpb && <polyline fill="none" stroke="#3f9a1f" strokeWidth={2.6 * k} strokeDasharray={`${8 * k} ${5 * k}`} points={cpb.year.flatMap((t, i) => [`${sx(t)},${sy(cpb.yoy[i])}`, `${sx(t + 1)},${sy(cpb.yoy[i])}`]).join(' ')}/>}
     {ghost && year && ghost.length === year.length && <polyline fill="none" stroke="#8a9692" strokeWidth={2.6 * k} strokeDasharray={`${7 * k} ${4 * k}`} points={year.map((t, i) => `${sx(t)},${sy(ghost[i])}`).join(' ')}/>}
-    {ghost2 && year && ghost2.length === year.length && <polyline fill="none" stroke="#7cc96a" strokeWidth={2.8 * k} strokeDasharray={`${1.5 * k} ${3.5 * k}`} strokeLinecap="round" points={year.map((t, i) => `${sx(t)},${sy(ghost2[i])}`).join(' ')}/>}
+    {ghost2 && year && ghost2.length === year.length && <polyline fill="none" stroke={color} strokeWidth={3.6 * k} strokeDasharray={`${0.5 * k} ${5 * k}`} strokeLinecap="round" points={year.map((t, i) => `${sx(t)},${sy(ghost2[i])}`).join(' ')}/>}
     {model && year && <polyline fill="none" stroke={color} strokeWidth={3 * k} strokeLinejoin="round" points={year.map((t, i) => `${sx(t)},${sy(model[i])}`).join(' ')}/>}
   </svg>;
 }
