@@ -17,5 +17,5 @@ const plot = page.locator('[aria-label="Poles of the subsidy to price path"]');
 const info = await plot.evaluate(el => { const gd = el; const ya = gd._fullLayout.yaxis.range, xa = gd._fullLayout.xaxis.range;
   const outside = gd.data.flatMap(t => (t.y ?? []).map((y, i) => [t.x[i], y]).filter(([x, y]) => y < ya[0] || y > ya[1] || x < xa[0] || x > xa[1]).map(() => t.name));
   return { names: gd.data.map(t => t.name), yrange: ya, outside }; });
-await plot.screenshot({ path: out + '/ident_apply.png' });
+await plot.evaluate(el => el.scrollIntoView({ block: 'center' })); await page.waitForTimeout(500); await plot.screenshot({ path: out + '/ident_apply.png' });
 console.log(JSON.stringify({ info, errors })); process.exit(0);

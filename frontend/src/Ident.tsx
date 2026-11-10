@@ -35,11 +35,14 @@ const BASE = { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', fo
 function PoleMap({ id, nominal, preview, path }: { id: Ident; nominal?: Ident; preview?: Ident; path?: PathStep[] }) {
   const box = useRef<HTMLDivElement>(null);
   const dom = id.metrics.dominant;
-  const pathDom = (path ?? []).map(st => st.dominant).filter((d): d is [number, number] => !!d);
-  const xmin = Math.min(-2.5, ...(dom ? [dom.re * 2.2] : []), ...pathDom.map(d => d[0] * 1.25));
+  const pathDom = (preview ? path ?? [] : []).map(st => st.dominant).filter((d): d is [number, number] => !!d);
+  const x0 = Math.min(-2.5, ...(dom ? [dom.re * 2.2] : []), ...pathDom.map(d => d[0] * 1.25));
+  // widen to take in the nearest faster pair too (when it is within 1.4x), so it does not drop just off the left edge
+  const nextRe = [...new Set(id.poles.filter(p => p.re < x0).map(p => +p.re.toFixed(6)))].sort((a, b) => b - a)[0];
+  const xmin = nextRe !== undefined && nextRe > 1.4 * x0 ? nextRe * 1.12 : x0;
   const shown = (p: IdPole) => p.re >= xmin;
   // every pole drawn fits: current, proposed, and the dots of the path between them
-  const trailIm = (path ?? []).flatMap(st => st.poles.filter(q => q[0] >= xmin).map(q => Math.abs(q[1])));
+  const trailIm = (preview ? path ?? [] : []).flatMap(st => st.poles.filter(q => q[0] >= xmin).map(q => Math.abs(q[1])));
   const ims = [...id.poles.filter(shown).map(p => Math.abs(p.im)), ...pathDom.map(d => d[1]), ...trailIm, ...(preview?.poles.filter(shown).map(p => Math.abs(p.im)) ?? [])], ymax = Math.max(1, ...ims) * 1.15;
   // cycle ticks at least ymax/7 apart, so the long cycles near the axis do not pile up
   const cyc = [1, 1.5, 2, 3, 5, 10, 20].filter(c => 2 * Math.PI / c <= ymax).filter((c, i, a) => i === 0 || 2 * Math.PI / a[i - 1] - 2 * Math.PI / c >= ymax / 7);
@@ -53,7 +56,7 @@ function PoleMap({ id, nominal, preview, path }: { id: Ident; nominal?: Ident; p
   data.push({ type: 'scatter', mode: 'markers', name: 'Other poles', ...pts(id.poles.filter(p => shown(p) && !isDom(p))), marker: { symbol: 'x-thin-open', size: 13, color: GREY, line: { width: 3 } }, hovertemplate: 'Re %{x:.2f} /yr<extra></extra>' });
   data.push({ type: 'scatter', mode: 'markers', name: 'Dominant pair', ...pts(id.poles.filter(isDom)), marker: { symbol: 'x-thin-open', size: 18, color: GREEN, line: { width: 4 } }, hovertemplate: 'Re %{x:.2f} /yr<extra></extra>' });
   // Where the poles travel while the parameters move step by step from the old to the new values.
-  const moving = path && path.length > 1, tone = preview ? BLUE : GREEN;
+  const moving = !!preview && !!path && path.length > 1, tone = BLUE;
   if (moving) {
     const trail = path!.slice(1, -1).flatMap(st => st.poles.filter(q => q[0] >= xmin));
     data.unshift({ type: 'scatter', mode: 'markers', name: 'Path', x: trail.map(q => q[0]), y: trail.map(q => q[1]), marker: { size: 4, color: tone, opacity: 0.35 }, hoverinfo: 'skip' });
@@ -223,7 +226,7 @@ export function IdentPanel({ scenario, update, onPreview, auto }: { scenario: Sc
       {changed && <p className="state-note">The model runs with changed parameters: {Object.entries(own).map(([n, f]) => `${nameOf(n)} × ${fmt(f, 2)}`).join(', ')}. The H∞ and Ziegler–Nichols gains were designed for the netlist values; check them again. The operating point and the linearised B4 stay those of the netlist.</p>}
       <details className="ident-notes"><summary>About these plots</summary>
         <p className="muted small">A permanent +1 in the owner-occupied subsidy u (model units), loop open. Linear model of the netlist at its 2015 operating point; checked against the simulated netlist (difference below 0.03).</p>
-        {path && <p className="muted small">{preview ? 'Blue: where the poles move from the current model to the proposed parameters.' : 'Green line: where the dominant pair moved from the netlist values to the parameters in use.'} Dots: all poles at {path.length} steps in between.</p>}
+        {path && preview && <p className="muted small">Blue: where the poles move from the current model to the proposed parameters. Dots: all poles at {path.length} steps in between.</p>}
         <p className="muted small">Full adjustment: the time after which all decaying terms of the response together are below 5% of the long-run change (Claude's definition; the measured 5% settling time is {fmt(id.settle_5pct_yr, 1)} yr). Dominant pair: the oscillating poles that show most in the price, not the slowest ones. The CPB line has the same long-run size by construction: only its shape (an immediate jump) is the CPB's.</p>
       </details>
     </>}
