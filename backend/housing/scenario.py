@@ -43,7 +43,7 @@ class Scenario(BaseModel):
     skd: float = Field(1.008, ge=0, le=50)
     share_target_pct: float = Field(20.5, ge=5, le=50)
     target_growth_pct: float = Field(2.5, ge=0, le=6)
-    reference_base: float = Field(80.0, ge=50, le=130)
+    reference_base: float = Field(80.0, ge=50, le=160)  # up to 160: the trend of the CBS-fitted path starts at 134
     subsidy_scale: float = Field(1.0, ge=0, le=10)
     # False: the historical rental subsidy (4 until 2023, then 0) is switched off for the whole run.
     # With the rental-share loop on, the money that loop moves still flows (it has its own source).

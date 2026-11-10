@@ -11,6 +11,10 @@ const QUIET: Partial<Scenario> = { bank: false, crisis_scale: 0, covid_scale: 0,
 export const CPB_PEAKS: Partial<Scenario> = { feedback: false, bank: false, crisis_scale: 0, covid_scale: 0, income_path: 'stable', income_growth_pct: 5, income_scale: 0.1, subsidy_scale: 10, subsidy_path: 'historical', rental_subsidy: false, inflation_pct: 0, mortgage_scale: 1, mortgage_shift_yr: 0, interest_scale: 1, interest_shift_yr: 0, interest_new_share: 0.1 };
 export const FITTED_CBS: Partial<Scenario> = { mortgage_scale: 4.86, mortgage_shift_yr: 2.39, interest_scale: 0.27, interest_shift_yr: 0, interest_new_share: 0.1, inflation_pct: 4.47, covid_on_yr: 1.06, covid_fall_yr: 0.22,
   feedback: false, subsidy_path: 'historical', share_control: false, subsidy_scale: 1, rental_subsidy: true, income_path: 'historical', income_scale: 1, income_growth_pct: 1.53, bank: true, crisis_scale: 2, covid_scale: 1, crisis_start_yr: 2011.1, crisis_w: false, reference_base: 120, target_growth_pct: 0.9 };
+// Controller target in the PID and H-inf steps: the trend of the CBS-fitted open-loop price (log-linear fit 1996-2025:
+// 133.8 in 1996, +0.16% a year real), so both controllers keep the historical path and only damp its cycles. Claude's
+// fit, 10 Nov 2026; the nominal growth on the year-on-year card adds the fitted inflation (4.47%).
+export const TREND_TARGET: Partial<Scenario> = { reference_base: 133.8, target_growth_pct: 0.16 };
 // Stable growth path: income starts at 80 (the historical start 259.056 scaled) and grows 2% a year (Jesse, 10 Nov 2026).
 const INCOME_START = 80;
 const GROWTH: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 2, income_scale: INCOME_START / 259.056 };
@@ -33,12 +37,12 @@ export const TOUR: TourStep[] = [
     patch: { ...QUIET, ...CPB_PEAKS }, pins: [subsidy, price], cbs: true, cpbOverlay: true },
   { title: 'Bank and disturbances: the real path', text: 'Now the banking sector and all historical inputs and shocks (crisis, Covid, interest, mortgages, income), fitted to CBS. Click CBS to compare the model’s year-on-year change with the CBS index.',
     patch: { ...FITTED_CBS }, pins: [price], cbs: true },
-  { title: 'PID control, tuned by hand', text: 'Same historical set, loop closed with the Ziegler–Nichols PID. Use the arrows on P, I and D in the Tax Authority, or the pole plot in the side panel (right); each change runs at once. Click a line to plot it; grey dashed: the open loop with the historical subsidies.',
-    patch: { ...FITTED_CBS, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [subsidy, yoy], tuning: true, compare: true },
+  { title: 'PID control, tuned by hand', text: 'Same historical set, loop closed with the Ziegler–Nichols PID. Its target is the trend of the fitted path (+0.16% a year real), so the controller keeps the historical path and only damps the cycles. Use the arrows on P, I and D in the Tax Authority, or the pole plot in the side panel (right); each change runs at once. Click a line to plot it; grey dashed: the open loop with the historical subsidies.',
+    patch: { ...FITTED_CBS, ...TREND_TARGET, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [subsidy, yoy], tuning: true, compare: true },
   { title: 'Disturbance rejection', text: 'The PID from the previous step (its gains carry over), hit by one unit shock: the financial crisis by default; pick another shock, such as the interest rate, in the side panel (right). Click the price or the subsidy to plot its step response with the controller; grey dashed: the same shock without it. Linear model, loop closed.',
-    patch: { ...FITTED_CBS, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [price, subsidy], reject: 'd_crisis', keepGains: true },
+    patch: { ...FITTED_CBS, ...TREND_TARGET, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [price, subsidy], reject: 'd_crisis', keepGains: true },
   { title: 'H∞ control', text: 'Same historical set with the bank, now the robust H∞ PID. Click a line to plot it (grey dashed: the open loop with the historical subsidies; the “⋯ Ziegler–Nichols PID” button in the toolbar adds the fast PID, light green dotted). The side panel (right): robustness (S, T, KS against their limits, random markets) and the Nyquist plot with gain and phase margin.',
-    patch: { ...FITTED_CBS, feedback: true, controller: 'hinf', equilibrium_start: true }, pins: [subsidy, yoy, price], compare: true, robust: true },
+    patch: { ...FITTED_CBS, ...TREND_TARGET, feedback: true, controller: 'hinf', equilibrium_start: true }, pins: [subsidy, yoy, price], compare: true, robust: true },
 ];
 
 export function TourBar({ step, go, exit, busy }: { step: number; go: (i: number) => void; exit: () => void; busy: boolean }) {
