@@ -762,7 +762,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
         if (!e || !e.pins || e.pins.length < 2) return [];
         return inputPath(side, i, n, lay.size as [number, number], e.pins).slice(1).map(([px, py]) => [A.x + px / lay.size[0] * A.w, A.y + py / lay.size[1] * A.h] as Point);
       };
-      if (view.cpb) { const F = R.firms; firmD.forEach((d, i) => { const x = group.x + 26 + i * 30, y = F.y + F.h * (i + 1) / (firmD.length + 1); place(d, 'left', [[x, top + (firmD.length - 1 - i) * 70], [x, y], [F.x, y], ...into('firms', 'left', d, i, firmD.length)]); }); }
+      if (view.cpb) { const F = R.firms, Fy = F.y + stripTop('firms'), Fh = F.h - extra('firms'); firmD.forEach((d, i) => { const x = group.x + 26 + i * 30, y = Fy + Fh * (i + 1) / (firmD.length + 1); place(d, 'left', [[x, top + (firmD.length - 1 - i) * 70], [x, y], [F.x, y], ...into('firms', 'left', d, i, firmD.length)]); }); }
       else firmD.forEach((d, i) => { const x = cpbRegion!.x + 40 + i * 45; place(d, 'left', [[x, top + (firmD.length - 1 - i) * 70], [x, cpbRegion!.y]]); });
       const B = view.finance ? R.bank : finRegion!;
       bankD.forEach((d, i) => { const x = B.x + B.w * (i + 1) / (bankD.length + 1); place(d, 'right', [[x, top + i * 70], [x, B.y], ...(view.finance ? into('bank', 'top', d, i, bankD.length) : [])]); });
