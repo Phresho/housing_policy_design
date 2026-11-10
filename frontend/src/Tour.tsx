@@ -17,6 +17,9 @@ export const FITTED_CBS: Partial<Scenario> = { mortgage_scale: 4.86, mortgage_sh
 // 131.9 in 1996, flat in real terms, -0.02% a year rounded to 0), so both controllers keep the historical path and only damp its cycles. Claude's
 // fit, 10 Nov 2026; the nominal growth on the year-on-year card adds the fitted inflation (4.47%).
 export const TREND_TARGET: Partial<Scenario> = { reference_base: 131.9, target_growth_pct: 0 };
+// Slide preset (11 Nov 2026, also in tour steps 7-10 for the slides): the fitted set with a clearly W-shaped crisis shock (first dip 2008, partly back by 2010,
+// then the deeper main dip). Hand-picked for the slides, not fitted: the fitted preset's slow first dip fits CBS better.
+export const W_SLIDE: Partial<Scenario> = { crisis_w: true, crisis_w_start_yr: 2008, crisis_w_fall_yr: 1, crisis_w_scale: 0.8, crisis_w_on_yr: 0.5, crisis_w_recovery_yr: 0.8, crisis_w_floor: 0.4, crisis_scale: 2, crisis_start_yr: 2011.1 };
 // Stable growth path: income starts at 80 (the historical start 259.056 scaled) and grows 2% a year (Jesse, 10 Nov 2026).
 const INCOME_START = 80;
 const GROWTH: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 2, income_scale: INCOME_START / 259.056 };
@@ -38,13 +41,13 @@ export const TOUR: TourStep[] = [
   { title: 'Historical subsidies: the CPB path', text: 'The CPB model’s own historical path (the “CPB fit (peaks)” preset): historical subsidies ×10, income at a tenth growing 5% a year, so the model’s two peaks line up with the CPB’s (click CBS for the year-on-year card, CPB green dashed). Claude’s fit.',
     patch: { ...QUIET, ...CPB_PEAKS }, pins: [subsidy, price], cbs: true, cpbOverlay: true },
   { title: 'Bank and disturbances: the real path', text: 'Now the banking sector and all historical inputs and shocks (crisis, Covid, interest, mortgages, income), fitted to CBS. Click CBS to compare the model’s year-on-year change with the CBS index.',
-    patch: { ...FITTED_CBS }, pins: [price], cbs: true },
+    patch: { ...FITTED_CBS, ...W_SLIDE }, pins: [price], cbs: true },
   { title: 'PID control, tuned by hand', text: 'Same historical set, loop closed with the Ziegler–Nichols PID. Its target is the trend of the fitted path (flat in real terms; on the year-on-year card that is the fitted 4.5% inflation), so the controller keeps the historical path and only damps the cycles. Use the arrows on P, I and D in the Tax Authority, or the pole plot in the side panel (right); each change runs at once. Click a line to plot it; grey dashed: the open loop with the historical subsidies.',
-    patch: { ...FITTED_CBS, ...TREND_TARGET, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [subsidy, yoy], tuning: true, compare: true },
+    patch: { ...FITTED_CBS, ...W_SLIDE, ...TREND_TARGET, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [subsidy, yoy], tuning: true, compare: true },
   { title: 'Disturbance rejection', text: 'The PID from the previous step (its gains carry over), hit by one unit shock: the financial crisis by default; pick another shock, such as the interest rate, in the side panel (right). Click the price or the subsidy to plot its step response with the controller; grey dashed: the same shock without it. Linear model, loop closed.',
-    patch: { ...FITTED_CBS, ...TREND_TARGET, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [price, subsidy], reject: 'd_crisis', keepGains: true },
+    patch: { ...FITTED_CBS, ...W_SLIDE, ...TREND_TARGET, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [price, subsidy], reject: 'd_crisis', keepGains: true },
   { title: 'H∞ control', text: 'Same historical set with the bank, now the robust H∞ PID. Click a line to plot it (grey dashed: the open loop with the historical subsidies; the “⋯ Ziegler–Nichols PID” button in the toolbar adds the fast PID, light green dotted). The side panel (right): robustness (S, T, KS against their limits, random markets) and the Nyquist plot with gain and phase margin.',
-    patch: { ...FITTED_CBS, ...TREND_TARGET, feedback: true, controller: 'hinf', equilibrium_start: true }, pins: [subsidy, yoy, price], compare: true, robust: true },
+    patch: { ...FITTED_CBS, ...W_SLIDE, ...TREND_TARGET, feedback: true, controller: 'hinf', equilibrium_start: true }, pins: [subsidy, yoy, price], compare: true, robust: true },
 ];
 
 export function TourBar({ step, go, exit, busy }: { step: number; go: (i: number) => void; exit: () => void; busy: boolean }) {
