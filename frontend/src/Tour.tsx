@@ -15,15 +15,15 @@ export const FITTED_CBS: Partial<Scenario> = { mortgage_scale: 4.86, mortgage_sh
 const INCOME_START = 80;
 const GROWTH: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 2, income_scale: INCOME_START / 259.056 };
 const FLAT: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 0, income_scale: 1 };
-const STEP: Partial<Scenario> = { subsidy_path: 'step', subsidy_base: 0, subsidy_step: 10, subsidy_step_yr: 2005 };
+const STEP: Partial<Scenario> = { subsidy_path: 'step', subsidy_base: 0, subsidy_step: 20, subsidy_step_yr: 2005 };
 export type TourStep = { title: string; text: string; patch: Partial<Scenario>; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean; formulas?: boolean; reject?: string; robust?: boolean; keepGains?: boolean; cpbOverlay?: boolean; carry?: Partial<Scenario> };
 const price: Probe = { flow: 'y_price', q: 's' }, subsidy: Probe = { flow: 'owner_subsidy', q: 's' }, income: Probe = { flow: 'd_income', q: 's' }, yoy: Probe = { flow: 'y_yoy', q: 's' };
 export const TOUR: TourStep[] = [
   { title: 'The backbone: the CPB model', text: 'The circuit is built on the CPB housing-market model (Groot & Möhlmann, 2020): the four quadrants of DiPasquale and Wheaton. Each agent carries its CPB equations (numbers refer to the CPB document): click one to light up the flows and elements it describes. Open an agent with + to see its elements; the equations stay above them. No shocks, no subsidy, constant income, no bank: nothing pushes the market, so the price stays where it is.',
     patch: { ...QUIET, ...FLAT, subsidy_scale: 0 }, pins: [{ flow: 'y_price', q: 's' }], formulas: true },
-  { title: 'One step on the governor', text: 'The Tax Authority raises the subsidy once, from 0 to 10 in 2005; nothing else moves. The price overshoots, turns and settles: the market’s own dynamics. Right: its poles and step response. Change the full adjustment or the cycle there to see other dynamics on the canvas.',
+  { title: 'One step on the governor', text: 'The Tax Authority raises the subsidy once, from 0 to 20 in 2005; nothing else moves. The price overshoots, turns and settles: the market’s own dynamics. Right: its poles and step response. Change the full adjustment or the cycle there to see other dynamics on the canvas.',
     patch: { ...QUIET, ...FLAT, ...STEP }, pins: [subsidy, price], ident: true },
-  { title: 'A stable growth path', text: 'The settings of the previous step stay (including model parameters you fitted there); a stable growth path is added: income starts at 80 and grows 2% a year. The subsidy step of 10 in 2005 still shows against the trend.',
+  { title: 'A stable growth path', text: 'The settings of the previous step stay (including model parameters you fitted there); a stable growth path is added: income starts at 80 and grows 2% a year. The subsidy step of 20 in 2005 still shows against the trend.',
     patch: { ...QUIET, ...GROWTH, ...STEP }, pins: [income, subsidy, price], carry: GROWTH },
   { title: 'Phase-out in 20 small steps', text: 'On the growth path (income from 80, +2% a year), a subsidy of 30 is removed over 10 years (2005–2015) in 20 small steps. Each step is small, so the price glides.',
     patch: { ...QUIET, ...GROWTH, subsidy_path: 'staircase', phase_from: 30, phase_start_yr: 2005, phase_years: 10, phase_steps: 20 }, pins: [subsidy, price] },
