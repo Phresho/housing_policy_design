@@ -553,13 +553,22 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     const R: Record<string, Rect> = {}, scale: Record<string, number> = {};
     // CPB backbone view (tour): closed agents are larger and carry their CPB equations
     const withEq = (id: string) => !!view.formulas && !!FORMULAS[id];
-    const AB = (id: string): Point => withEq(id) ? FORMULA_BOX[id] ?? AGENT_BOX : AGENT_BOX;
+    // the formulas grow with the label-size slider (1.3x = the size they were drawn for)
+    const eq = lab / 1.3;
+    const AB = (id: string): Point => withEq(id) && FORMULA_BOX[id] ? [Math.max(AGENT_BOX[0], FORMULA_BOX[id][0] * eq), Math.max(AGENT_BOX[1], FORMULA_BOX[id][1] * eq)] : AGENT_BOX;
     // Opened agent in the CPB backbone view: its formula strip sits above the circuit (strip(id) canvas units).
-    const strip = (id: string) => withEq(id) && view.agents.includes(id) ? STRIP_H[id] ?? 0 : 0;
-    const stripTop = (id: string) => STRIP_BOTTOM.has(id) ? 0 : strip(id);  // offset of the circuit inside the block
+    // inside an opened agent the width is the circuit's: the widest equation (utility) fits up to 1.75x labels
+    const STRIP_EQ_MAX: Record<string, number> = { households: 1.75 / 1.3 };
+    const eqIn = (id: string) => Math.min(eq, STRIP_EQ_MAX[id] ?? Infinity);
+    const strip = (id: string) => withEq(id) && view.agents.includes(id) ? (STRIP_H[id] ?? 0) * eqIn(id) : 0;
+    // An opened agent without a formula strip on top gets a band for its header (it grows with the label size), so
+    // the header never covers the top of the circuit. A top strip already leaves room for it.
+    const band = (id: string) => view.agents.includes(id) && !(strip(id) && !STRIP_BOTTOM.has(id)) ? HEAD_FLOW * lab : 0;
+    const extra = (id: string) => strip(id) + band(id);  // block height that is not circuit
+    const stripTop = (id: string) => band(id) + (STRIP_BOTTOM.has(id) ? 0 : strip(id));  // offset of the circuit inside the block
     const lit = (flow: string) => !!hl?.flows.includes(flow);
     const shift = (dx: number, dy: number, ids: string[]) => ids.forEach(i => { R[i].x += dx; R[i].y += dy; });
-    const sized = (id: string) => { const open = view.agents.includes(id), [w, h] = map.layouts[id].size; scale[id] = open ? SCALE.expanded : 0; R[id] = open ? { x: 0, y: 0, w: w * SCALE.expanded, h: h * SCALE.expanded + strip(id) } : { x: 0, y: 0, w: AB(id)[0], h: AB(id)[1] }; };
+    const sized = (id: string) => { const open = view.agents.includes(id), [w, h] = map.layouts[id].size; scale[id] = open ? SCALE.expanded : 0; R[id] = open ? { x: 0, y: 0, w: w * SCALE.expanded, h: h * SCALE.expanded + extra(id) } : { x: 0, y: 0, w: AB(id)[0], h: AB(id)[1] }; };
     // Port of a flow on a block: agent (from its drawing), collapsed CPB box, or collapsed financial sector (drawn like Bank).
     const portOf = (node: string, flow: string): { p: Point; side: Side; ret: Point } => {
       const r = R[node];
@@ -664,11 +673,11 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
         const open = view.agents.includes(id), a = map.agents[id];
         const circuit = <AgentCircuit map={map} agent={id} scenario={scenario} selection={selection} pick={select} menu={menu} inputs={map.disturbances.filter(d => d.target === id && active(d))} inputSide={id === 'bank' ? 'top' : 'left'} outside highlight={hl?.elements} litFlows={hl?.flows} trace={hl?.trace}/>;
         const cards = withEq(id) ? <FormulaCards agent={id} active={hl?.id ?? null} pick={setHl}/> : undefined;
-        const sh = strip(id);
+        const sh = strip(id), bh = band(id), pc = (v: number) => `${v / R[id].h * 100}%`;
         block(id, R[id], open ? { label: a.label, tone: 'agent', open, tab: TAB[id], toggle: () => toggle(id),
             children: sh ? (STRIP_BOTTOM.has(id)
-              ? <><div className="circuit-below" style={{ top: 0, bottom: `${sh / R[id].h * 100}%` }}>{circuit}</div><div className="formula-strip bottom" style={{ top: 'auto', bottom: 0, height: `${sh / R[id].h * 100}%` }}>{cards}</div></>
-              : <><div className="formula-strip" style={{ height: `${sh / R[id].h * 100}%` }}>{cards}</div><div className="circuit-below" style={{ top: `${sh / R[id].h * 100}%` }}>{circuit}</div></>) : circuit }
+              ? <><div className="circuit-below" style={{ top: pc(bh), bottom: pc(sh) }}>{circuit}</div><div className="formula-strip bottom" style={{ top: 'auto', bottom: 0, height: `${sh / R[id].h * 100}%`, ['--eq' as string]: eqIn(id) }}>{cards}</div></>
+              : <><div className="formula-strip" style={{ height: `${sh / R[id].h * 100}%`, ['--eq' as string]: eqIn(id) }}>{cards}</div><div className="circuit-below" style={{ top: pc(sh) }}>{circuit}</div></>) : bh ? <div className="circuit-below" style={{ top: pc(bh) }}>{circuit}</div> : circuit }
           : { label: a.label, tone: withEq(id) ? 'agent with-formulas' : 'agent', toggle: () => toggle(id), selected: on({ kind: 'agent', id }), children: cards }, 3);
       };
       if (view.cpb) CPB_AGENTS.forEach(agentBlock);
@@ -686,7 +695,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       const f = subsidy(id);
       let points: Point[] = [[ctrl.x + ctrl.w, y], [(target ?? group).x, y]];
       if (view.system && view.cpb) {
-        const lay = map.layouts.households, inner = lay.signals.find(s => s.flow === id)!.path, H0 = R.households, sh = strip('households'), H = { ...H0, y: H0.y + stripTop('households'), h: H0.h - sh }, x = H.x + inner[0][0] / lay.size[0] * H.w;
+        const lay = map.layouts.households, inner = lay.signals.find(s => s.flow === id)!.path, H0 = R.households, sh = strip('households'), H = { ...H0, y: H0.y + stripTop('households'), h: H0.h - extra('households') }, x = H.x + inner[0][0] / lay.size[0] * H.w;
         points = [[ctrl.x + ctrl.w, y], [x, y], [x, H0.y]];
         // Households open: one arrow on to the subsidy source inside (the drawing's own path, in canvas units)
         if (view.agents.includes('households')) points.push(...inner.slice(1).map(([px, py]) => [H.x + px / lay.size[0] * H.w, H.y + py / lay.size[1] * H.h] as Point));
@@ -749,7 +758,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       // An open agent: the shock arrow runs on to the element it acts on (the path the drawing used to draw dashed).
       const into = (agent: string, side: 'left' | 'top', d: { element?: string }, i: number, n: number): Point[] => {
         if (!view.agents.includes(agent)) return [];
-        const lay = map.layouts[agent], e = d.element ? map.elements.find(x => x.name === d.element && x.agent === agent) : undefined, A0 = R[agent], A = { ...A0, y: A0.y + stripTop(agent), h: A0.h - strip(agent) };
+        const lay = map.layouts[agent], e = d.element ? map.elements.find(x => x.name === d.element && x.agent === agent) : undefined, A0 = R[agent], A = { ...A0, y: A0.y + stripTop(agent), h: A0.h - extra(agent) };
         if (!e || !e.pins || e.pins.length < 2) return [];
         return inputPath(side, i, n, lay.size as [number, number], e.pins).slice(1).map(([px, py]) => [A.x + px / lay.size[0] * A.w, A.y + py / lay.size[1] * A.h] as Point);
       };
@@ -962,7 +971,7 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
     <div className="map-body" ref={bodyRef} style={{ gridTemplateColumns: `${left ? (leftOpen ? '290px ' : '34px ') : ''}minmax(0,1fr) ${!dock ? '34px' : selection.kind === 'ident' || selection.kind === 'robust' ? '520px' : selection.kind === 'agent' && selection.id === 'controller' ? '460px' : '340px'}` }}>
       {left && (leftOpen ? <aside className="inspector left-dock"><button className="dock-toggle" aria-label="Collapse scenario panel" title="Collapse" onClick={() => setLeftOpen(false)}><Minus size={14}/></button>{left}</aside>
         : <button className="dock-handle" data-no-shot aria-label="Open scenario panel" title="Open scenario panel" onClick={() => setLeftOpen(true)}><ChevronRight size={16}/><span>Scenario</span></button>)}
-      <div className="map-canvas" ref={canvasRef} style={{ ['--lab' as string]: lab }} onClick={() => setMenuAt(null)}><ReactFlowProvider><Canvas map={map} view={view} setView={setView} scenario={scenario} result={result} at={at} selection={selection} select={setSelection} focus={focus} menu={openMenu} flip={() => setFeedback(!scenario.feedback)} probes={probeState} step={stepGain} steps={stepping ? steps : null} lab={lab}/></ReactFlowProvider>
+      <div className="map-canvas" ref={canvasRef} style={{ ['--lab' as string]: lab, ['--eq' as string]: lab / 1.3 }} onClick={() => setMenuAt(null)}><ReactFlowProvider><Canvas map={map} view={view} setView={setView} scenario={scenario} result={result} at={at} selection={selection} select={setSelection} focus={focus} menu={openMenu} flip={() => setFeedback(!scenario.feedback)} probes={probeState} step={stepGain} steps={stepping ? steps : null} lab={lab}/></ReactFlowProvider>
         {menuAt && <div className="ctx-menu" role="menu" style={{ left: menuAt.x, top: menuAt.y }} onClick={e => e.stopPropagation()}>
           {menuAt.target.kind === 'agent' && (menuAt.target.id === 'parliament' || menuAt.target.id === 'sum') ? <>
             <p>{menuAt.target.id === 'parliament' ? 'Parliament' : 'Summing junction'}</p>
