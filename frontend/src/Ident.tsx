@@ -32,15 +32,18 @@ function usePlotly(node: React.RefObject<HTMLDivElement | null>, data: object[],
 const BASE = { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { family: 'Inter, system-ui, sans-serif', size: 12, color: '#3c4a45' }, hovermode: 'closest' };
 
 /** Pole map: real part in 1/year; imaginary axis labelled with the cycle length in years (2π/Im), not in rad/year. */
-function PoleMap({ id, nominal, preview, path }: { id: Ident; nominal?: Ident; preview?: Ident; path?: PathStep[] }) {
+function PoleMap({ id, nominal, preview, path, target }: { id: Ident; nominal?: Ident; preview?: Ident; path?: PathStep[]; target?: { adjust: number | null; cycle: number | null } }) {
   const box = useRef<HTMLDivElement>(null);
   const dom = id.metrics.dominant;
   const pathDom = (preview ? path ?? [] : []).map(st => st.dominant).filter((d): d is [number, number] => !!d);
-  const xmin = Math.min(-2.5, ...(dom ? [dom.re * 2.2] : []), ...pathDom.map(d => d[0] * 1.25));
+  // Adjustment time as a decay rate: the response is within 5% after T years when the slowest decay is 3/T (ln 20 = 3.0).
+  const rate = (T: number | null | undefined) => T ? -Math.log(20) / T : null;
+  const lines = [rate(target?.adjust), rate(id.metrics.adjust_yr), rate(preview?.metrics.adjust_yr)].filter((v): v is number => v !== null);
+  const xmin = Math.min(-2.5, ...(dom ? [dom.re * 2.2] : []), ...pathDom.map(d => d[0] * 1.25), ...lines.map(v => v * 1.3));
   const shown = (p: IdPole) => p.re >= xmin;
   // every pole drawn fits: current, proposed, and the dots of the path between them
   const trailIm = (preview ? path ?? [] : []).flatMap(st => st.poles.filter(q => q[0] >= xmin).map(q => Math.abs(q[1])));
-  const ims = [...id.poles.filter(shown).map(p => Math.abs(p.im)), ...pathDom.map(d => d[1]), ...trailIm, ...(preview?.poles.filter(shown).map(p => Math.abs(p.im)) ?? [])], ymax = Math.max(1, ...ims) * 1.3;
+  const ims = [...id.poles.filter(shown).map(p => Math.abs(p.im)), ...pathDom.map(d => d[1]), ...trailIm, ...(preview?.poles.filter(shown).map(p => Math.abs(p.im)) ?? []), ...(target?.cycle ? [2 * Math.PI / target.cycle] : [])], ymax = Math.max(1, ...ims) * 1.3;
   // cycle ticks at least ymax/7 apart, so the long cycles near the axis do not pile up
   const cyc = [1, 1.5, 2, 3, 5, 10, 20].filter(c => 2 * Math.PI / c <= ymax && 2 * Math.PI / c >= ymax / 6).reduce<number[]>((kept, c) => kept.length && 2 * Math.PI / kept[kept.length - 1] - 2 * Math.PI / c < ymax / 6 ? kept : [...kept, c], []);
   const ticks = [...cyc.map(c => 2 * Math.PI / c), 0, ...cyc.map(c => -2 * Math.PI / c)];
@@ -62,14 +65,29 @@ function PoleMap({ id, nominal, preview, path }: { id: Ident; nominal?: Ident; p
   if (preview) data.push({ type: 'scatter', mode: 'markers', name: 'Proposed', x: preview.poles.filter(p => p.re >= xmin).map(p => p.re), y: preview.poles.filter(p => p.re >= xmin).map(p => p.im), marker: { symbol: 'x-thin-open', size: 15, color: BLUE, line: { width: 3 } }, hovertemplate: 'proposed %{x:.2f}<extra></extra>' });
   // Dashed lines from a dominant pole: across to the y-axis (its cycle) and down to the real axis, labelled with the
   // time this pair needs to fall to 5% (3 / decay rate). Green: current model; blue: proposed parameters (labels on the other side).
-  const guide = (d: { re: number; im: number } | null | undefined, color: string, below: boolean) => !d ? { shapes: [], notes: [] } : {
-    shapes: [{ type: 'line', x0: xmin, x1: d.re, y0: d.im, y1: d.im, line: { color, width: 1.6, dash: 'dash' } }, { type: 'line', x0: d.re, x1: d.re, y0: 0, y1: d.im, line: { color, width: 1.6, dash: 'dash' } }],
-    notes: [{ x: xmin, y: d.im, xanchor: 'left', yanchor: below ? 'top' : 'bottom', yshift: below ? -3 : 3, xshift: 4, text: `cycle ${fmt(2 * Math.PI / d.im, 1)} yr`, showarrow: false, font: { color, size: 12.5 } },
-      { x: d.re, y: 0, xanchor: d.re > xmin * 0.3 ? 'right' : 'left', yanchor: below ? 'bottom' : 'top', xshift: d.re > xmin * 0.3 ? -5 : 5, yshift: below ? 3 : -3, text: `adjustment ≈ ${fmt(-Math.log(0.05) / -d.re, 1)} yr`, showarrow: false, font: { color, size: 12 } }],
+  // Dashed: the model's full adjustment (vertical, as a decay rate; the same number as the text below) and the cycle of
+  // its dominant pair (horizontal). Orange dotted: the values you set.
+  const guide = (m: Ident['metrics'] | undefined, color: string, below: boolean, dash = 'dash', label = '', yLabel?: number, mine?: { adjust?: number | null; cycle?: number | null }) => {
+    // a value you set that lies on this line (within 3%) is named in its label: '… (yours 4.5)'
+    const yours = (v: number | null | undefined, own: number | null | undefined) => own && v && fmt(own, 1) !== fmt(v, 1) && Math.abs(own - v) <= 0.03 * v ? ` (yours ${fmt(own, 1)})` : '';
+    const shapes: object[] = [], notes: object[] = [];
+    if (!m) return { shapes, notes };
+    const x = rate(m.adjust_yr), yc = m.cycle_yr ? 2 * Math.PI / m.cycle_yr : null;
+    if (yc) { shapes.push({ type: 'line', x0: xmin, x1: 0, y0: yc, y1: yc, line: { color, width: 1.6, dash } });
+      notes.push({ x: xmin, y: yc, xanchor: 'left', yanchor: below ? 'top' : 'bottom', yshift: below ? -3 : 3, xshift: 4, text: `${label}cycle ${fmt(m.cycle_yr, 1)} yr${yours(m.cycle_yr, mine?.cycle)}`, showarrow: false, font: { color, size: 12.5 } }); }
+    if (x) { const right = x > xmin * 0.3; shapes.push({ type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1, line: { color, width: 1.6, dash } });
+      notes.push({ x, y: yLabel ?? (below ? 0.04 : 0.96), yref: 'paper', xanchor: right ? 'right' : 'left', yanchor: below ? 'bottom' : 'top', xshift: right ? -5 : 5, text: `${label}full adjustment ${fmt(m.adjust_yr, 1)} yr${yours(m.adjust_yr, mine?.adjust)}`, showarrow: false, font: { color, size: 12 }, bgcolor: 'rgba(255,255,255,.8)' }); }
+    return { shapes, notes };
   };
-  const gNow = guide(dom, GREEN, false), gNew = guide(preview?.metrics.dominant, BLUE, true);
-  const guides = [...gNow.shapes, ...gNew.shapes];
-  const notes: object[] = [...gNow.notes, ...gNew.notes];
+  const ORANGE = '#e0602b';
+  const mine = target ? { adjust: target.adjust, cycle: target.cycle } : undefined;
+  const gNow = guide(id.metrics, GREEN, false, 'dash', '', undefined, preview ? undefined : mine), gNew = guide(preview?.metrics, BLUE, true, 'dash', '', undefined, mine);
+  // your values: only where they differ from what the model (or the proposal) already shows, so labels do not pile up
+  const near = (a: number | null | undefined, b: number | null | undefined) => !!a && !!b && Math.abs(a - b) <= 0.03 * b;
+  const shown_ = (v: number | null | undefined, key: 'adjust_yr' | 'cycle_yr') => v && !near(v, id.metrics[key]) && !near(v, preview?.metrics[key]) ? v : null;
+  const set = target ? guide({ ...id.metrics, adjust_yr: shown_(target.adjust, 'adjust_yr'), cycle_yr: shown_(target.cycle, 'cycle_yr') }, ORANGE, true, 'dot', 'your ', 0.5) : { shapes: [], notes: [] };
+  const guides = [...gNow.shapes, ...gNew.shapes, ...set.shapes];
+  const notes: object[] = [...gNow.notes, ...gNew.notes, ...set.notes];
   if (moving && pathDom.length > 3) for (const k of [Math.floor(pathDom.length / 3), Math.floor(2 * pathDom.length / 3), pathDom.length - 1]) for (const sgn of [1, -1]) {
     const [x1, y1] = pathDom[k], [x0, y0] = pathDom[Math.max(0, k - 1)];
     if (Math.hypot(x1 - x0, y1 - y0) > 1e-4) notes.push({ x: x1, y: sgn * y1, ax: x0, ay: sgn * y0, axref: 'x', ayref: 'y', text: '', showarrow: true, arrowhead: 2, arrowsize: 1.4, arrowwidth: 2, arrowcolor: tone } as never);
@@ -82,7 +100,7 @@ function PoleMap({ id, nominal, preview, path }: { id: Ident; nominal?: Ident; p
     annotations: [...notes, { x: 0.15, y: ymax * 0.8, text: 'unstable', showarrow: false, font: { color: RED, size: 11 }, textangle: -90 }],
     xaxis: { title: { text: 'Re(s)  [1/year]  (decay rate)' }, range: [xmin, 0.35], gridcolor: '#e8ece9', zeroline: false },
     yaxis: { title: { text: 'Im(s)  as cycle length' }, range: [-ymax, ymax], tickvals: ticks, ticktext, gridcolor: '#e8ece9', zerolinecolor: '#aab5b0' },
-  }, [id, nominal, preview, path]);
+  }, [id, nominal, preview, path, target?.adjust, target?.cycle]);
   return <div ref={box} style={{ minHeight: 320 }} role="img" aria-label="Poles of the subsidy to price path"/>;
 }
 
@@ -199,7 +217,7 @@ export function IdentPanel({ scenario, update, onPreview, auto }: { scenario: Sc
     {error && <p className="state-note">{error}</p>}
     {!id && !error && <p className="muted"><LoaderCircle className="spin" size={14}/> Computing…</p>}
     {id && m && <>
-      <h4 className="ident-first">Poles · subsidy → house price, loop open{scenario.bank ? '' : ' · no bank (CPB model)'}</h4><PoleMap id={id} preview={preview} path={path}/>
+      <h4 className="ident-first">Poles · subsidy → house price, loop open{scenario.bank ? '' : ' · no bank (CPB model)'}</h4><PoleMap id={id} preview={preview} path={path} target={{ adjust, cycle: useCycle ? cycle : null }}/>
       <h4>Step response · +1 in the subsidy</h4><StepView id={id} preview={preview}/>
       <p className="ident-line">Long-run <b>{fmt(id.final, 3)}</b> · peak <b>{fmt(id.peak.y, 3)}</b> after {fmt(id.peak.t, 1)} yr · full adjustment <b>{fmt(m.adjust_yr, 1)} yr</b> · cycle <b>{fmt(m.cycle_yr, 1)} yr</b></p>
       <hr/>

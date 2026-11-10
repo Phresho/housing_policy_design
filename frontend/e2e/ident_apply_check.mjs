@@ -12,10 +12,14 @@ await page.getByRole('button', { name: /^Step 2:/ }).click(); await page.locator
 const adj = page.locator('.ident-form input[type=number]').first(); await adj.fill(process.argv[3] ?? '4');
 await page.locator('.ident-form input[type=checkbox]').check(); await page.locator('.ident-form input[type=number]').nth(1).fill(process.argv[4] ?? '6');
 await page.getByRole('button', { name: 'Use in the simulation' }).waitFor({ timeout: 120000 });
+const plot0 = page.locator('[aria-label="Poles of the subsidy to price path"]'); await page.waitForTimeout(1500);
+await plot0.evaluate(el => el.scrollIntoView({ block: 'center' })); await page.waitForTimeout(500); await plot0.screenshot({ path: out + '/ident_preview.png' });
+const notesOf = () => plot0.evaluate(el => el._fullLayout.annotations.map(a => a.text));
+const pre = { notes: await notesOf(), line: await page.locator('.ident-line').textContent(), proposed: await page.locator('.ident-preview p').first().textContent() };
 await page.getByRole('button', { name: 'Use in the simulation' }).click(); await page.waitForTimeout(9000);
 const plot = page.locator('[aria-label="Poles of the subsidy to price path"]');
 const info = await plot.evaluate(el => { const gd = el; const ya = gd._fullLayout.yaxis.range, xa = gd._fullLayout.xaxis.range;
   const outside = gd.data.flatMap(t => (t.y ?? []).map((y, i) => [t.x[i], y]).filter(([x, y]) => y < ya[0] || y > ya[1] || x < xa[0] || x > xa[1]).map(() => t.name));
   return { names: gd.data.map(t => t.name), yrange: ya, outside }; });
 await plot.evaluate(el => el.scrollIntoView({ block: 'center' })); await page.waitForTimeout(500); await plot.screenshot({ path: out + '/ident_apply.png' });
-console.log(JSON.stringify({ info, errors })); process.exit(0);
+console.log(JSON.stringify({ pre, after: { notes: await notesOf(), line: await page.locator('.ident-line').textContent() }, info, errors }, null, 1)); process.exit(0);
