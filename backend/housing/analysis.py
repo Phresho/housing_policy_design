@@ -156,7 +156,9 @@ def root_locus(n: int = 260):
 
 
 # ---------------------------------------------------------------- weights (Claude's choices)
-def WP(w, M=2.0, wB=2.0, eps=1e-3):
+# Peak M = 2.2 on the site (thesis: 2.0). The thesis H-inf gains reach |W_P S| = 1.01 on this netlist (at a 2-year
+# cycle) with M = 2; 2.2 gives them a visible margin (0.98). Jesse's request, 10 Nov 2026.
+def WP(w, M=2.2, wB=2.0, eps=1e-3):
     s = 1j * np.asarray(w)
     return (s / M + wB) / (s + wB * eps)
 

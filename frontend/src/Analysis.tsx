@@ -320,6 +320,6 @@ export function Robustness({ design, docked = false }: { design: Design; docked?
       {busy && !mc && <p className="muted small">The first draw at a new uncertainty builds 100 markets, about 8 seconds.</p>}
     </section>
     <section className="panel"><h3>Guarantee instead of a sample (μ-analysis)</h3><p className="muted">The thesis reports that the H∞ PID stays stable for any combination of errors up to ±31% on 25 parameters. That number comes from the thesis version of the model and needs minutes of computation; it is not recomputed here for the run netlist.</p></section>
-    <p className="provenance">Weights are the thesis analysis's own choices: bandwidth 2 rad/yr (3.1-year cycle), peak 2, effort limit 8.2, model error from 150 random ±20% markets (seed 11). The ZN preset uses the thesis gains, set on an earlier version of the model; the Root locus page also offers ZN recomputed for this netlist.</p>
+    <p className="provenance">Weights are the thesis analysis's own choices: bandwidth 2 rad/yr (3.1-year cycle), peak 2.2 (the thesis uses 2; with 2 the H∞ PID misses by 1% on this netlist), effort limit 8.2, model error from 150 random ±20% markets (seed 11). The ZN preset uses the thesis gains, set on an earlier version of the model; the Root locus page also offers ZN recomputed for this netlist.</p>
   </div>;
 }
