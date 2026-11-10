@@ -15,8 +15,8 @@ interface Evaluation { poles: PoleRow[]; stable: boolean; outside: number; sigma
 export interface Transfer { input: string; output: string; feedback: boolean; cycle_yr: number[]; gain: number[]; phase_deg: number[]; step_years: number[]; step: number[]; poles: PoleRow[]; zeros: PoleRow[]; integrators: number; long_run_gain: number | null }
 export type Pick = { kind: 'flow' | 'signal' | 'element'; id: string; label: string };
 
-// A few words on what each curve means for the economy, next to its name.
-const ECON = { S: 'how much of a price shock is left', T: 'model errors that reach the price', KS: 'subsidy spent per price shock' };
+// The job each curve checks, next to its name (Jesse's choice, 11 Nov 2026).
+const ECON = { S: 'shock rejection', T: 'robustness to model error', KS: 'policy effort' };
 export const COLORS = { hinf: '#145a32', zn: '#7cc96a', design: '#2F6FB5', spec: '#E8642B', S: '#00A6D6', T: '#6D1780', KS: '#E8642B', price: '#3f9a1f', subsidy: '#1f6fc4' };
 const num = (v: number, d = 2) => v.toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
 export const specFrom = (settling: number, overshoot: number) => { const lo = Math.log(overshoot / 100); return { sigma: 4 / settling, zeta: -lo / Math.sqrt(Math.PI ** 2 + lo ** 2) }; };

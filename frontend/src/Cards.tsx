@@ -55,9 +55,9 @@ export function SensBody({ K, filtered, settling, overshoot, w = 268, h = 168, k
     <span><b style={{ color: COLORS[name] }}>{name}</b> {what} <em className={ev.limits[name] <= 1 ? 'ok' : 'bad'}>{ev.limits[name] <= 1 ? 'met' : 'missed'} ({ev.limits[name].toFixed(2)})</em></span>
     <CyclePlot x={ov.cycle_yr} w={w} h={Math.round(h / 3)} k={k} lines={[{ y: bound, color: '#E8642B', dash: true, width: 1.5 }, { y, color: COLORS[name] }]}/></div>;
   return <>
-    {row('S', ev.S, ov.WP.map(v => 1 / v), 'sensitivity · how much of a price shock is left')}
-    {row('T', ev.T, ov.WT.map(v => 1 / v), 'complementary sensitivity · model errors that reach the price')}
-    {row('KS', ev.KS, ev.KS.map(() => ov.ks_limit), 'control sensitivity · subsidy spent per price shock')}
+    {row('S', ev.S, ov.WP.map(v => 1 / v), 'sensitivity · shock rejection')}
+    {row('T', ev.T, ov.WT.map(v => 1 / v), 'complementary sensitivity · robustness to model error')}
+    {row('KS', ev.KS, ev.KS.map(() => ov.ks_limit), 'control sensitivity · policy effort')}
     <small>Dashed: the limit (thesis weights). Cycle length in years, long cycles left.</small>
   </>;
 }
