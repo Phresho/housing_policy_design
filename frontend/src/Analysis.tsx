@@ -17,7 +17,7 @@ export type Pick = { kind: 'flow' | 'signal' | 'element'; id: string; label: str
 
 // A few words on what each curve means for the economy, next to its name.
 const ECON = { S: 'how much of a price shock is left', T: 'model errors that reach the price', KS: 'subsidy spent per price shock' };
-export const COLORS = { hinf: '#1F8A4C', zn: '#7cc96a', design: '#2F6FB5', spec: '#E8642B', S: '#00A6D6', T: '#6D1780', KS: '#E8642B', price: '#3f9a1f', subsidy: '#1f6fc4' };
+export const COLORS = { hinf: '#145a32', zn: '#7cc96a', design: '#2F6FB5', spec: '#E8642B', S: '#00A6D6', T: '#6D1780', KS: '#E8642B', price: '#3f9a1f', subsidy: '#1f6fc4' };
 const num = (v: number, d = 2) => v.toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
 export const specFrom = (settling: number, overshoot: number) => { const lo = Math.log(overshoot / 100); return { sigma: 4 / settling, zeta: -lo / Math.sqrt(Math.PI ** 2 + lo ** 2) }; };
 const overshootOf = (zeta: number) => 100 * Math.exp(-Math.PI * zeta / Math.sqrt(1 - zeta ** 2));
@@ -288,7 +288,9 @@ export function Robustness({ design, docked = false }: { design: Design; docked?
     const trustEnd = cyc.find((c, i) => ov.WT[i] >= 1 && (i === 0 || ov.WT[i - 1] < 1)) ?? 1.5;
     // Shaded area above the limit: one closed polygon (limit curve, then back along the top).
     const shade = (limit: number[], name: string): Trace[] => { const l = lim(limit); return [{ name: 'outside our limit', x: [...l.x, ...[...l.x].reverse()], y: [...l.y, ...l.x.map(() => 1e4)], color: 'rgba(0,0,0,0)', width: 0, fill: 'toself', fillcolor: 'rgba(232,100,43,.09)', showlegend: false, hover: false }, { name, ...l, color: COLORS.spec, dash: 'dash', width: 2 }]; };
-    const three = (key: 'S' | 'T' | 'KS'): Trace[] => [{ name: 'Ziegler–Nichols (thesis gains)', ...lim(curves.z[key]), color: COLORS.zn, dash: 'dot', width: 2.8 }, { name: 'H∞ PID', ...lim(curves.h[key]), color: COLORS.hinf }, { name: 'Your design', ...lim(curves.d[key]), color: COLORS.design, dash: 'dot', width: 2.6 }];
+    // When the gains in use are the H-inf gains, the H-inf curve is the design: no separate 'your design' curve.
+    const isHinf = design.K.every((v, i) => Math.abs(v - ov.presets.hinf.K[i]) < 1e-3 * Math.max(1, Math.abs(v)));
+    const three = (key: 'S' | 'T' | 'KS'): Trace[] => [{ name: 'Ziegler–Nichols (thesis gains)', ...lim(curves.z[key]), color: COLORS.zn, dash: 'dot', width: 2.8 }, { name: 'H∞ PID', ...lim(curves.h[key]), color: COLORS.hinf }, ...(isHinf ? [] : [{ name: 'Your design', ...lim(curves.d[key]), color: COLORS.design, dash: 'dot' as const, width: 2.6 }])];
     const vline = (x: number, text: string) => ({ shape: { type: 'line', x0: x, x1: x, yref: 'paper', y0: 0, y1: 1, line: { color: '#8a9692', width: 1, dash: 'dot' } }, note: { x: Math.log10(x), xref: 'x', yref: 'paper', y: 1, text, showarrow: false, xanchor: 'left', font: { size: 11, color: '#5b6a64' } } });
     const bw = vline(2 * Math.PI / 2, 'bandwidth 3.1 yr'), trust = vline(trustEnd, `trust ends ${num(trustEnd, 1)} yr`);
     const mcS: Trace[] = mc ? mc.design.curves.map((c, i) => ({ name: c.stable ? 'random market, stable' : 'random market, unstable', ...within(cyc.filter((_, j) => j % 5 === 0), c.S, lo, hi), color: c.stable ? 'rgba(47,111,181,.35)' : 'rgba(200,40,30,.6)', width: 1, showlegend: i < 1, hover: false })) : [];
@@ -300,14 +302,15 @@ export function Robustness({ design, docked = false }: { design: Design; docked?
   }, [ov, curves, mc]);
   if (err) return <div role="alert" className="notice bad">{err}</div>;
   if (!ov || !panels || !curves) return <section className="panel"><p className="muted"><LoaderCircle className="spin" size={14}/> Building the linear model and 150 random markets (about 15 seconds the first time)…</p>{error && <p className="state-note">{error}</p>}</section>;
+  const hinfIsDesign = design.K.every((v, i) => Math.abs(v - ov.presets.hinf.K[i]) < 1e-3 * Math.max(1, Math.abs(v))), designName = hinfIsDesign ? 'H∞ PID' : 'Your design';
   const card = (key: 'S' | 'T' | 'KS', title: string, meaning: string, yTitle: string) => {
     const v = curves.d.limits[key];
-    return <section className="panel robust-card"><div className="robust-head"><div><h3 style={{ color: COLORS[key] }} title={docked ? meaning : undefined}>{title} <span className="econ">· {ECON[key]}</span></h3>{!docked && <p className="muted small">{meaning}</p>}</div><div className={'light ' + (v <= 1 ? 'ok' : 'bad')}><span aria-hidden="true"/>Your design<b>{num(v)}</b></div></div>
+    return <section className="panel robust-card"><div className="robust-head"><div><h3 style={{ color: COLORS[key] }} title={docked ? meaning : undefined}>{title} <span className="econ">· {ECON[key]}</span></h3>{!docked && <p className="muted small">{meaning}</p>}</div><div className={'light ' + (v <= 1 ? 'ok' : 'bad')}><span aria-hidden="true"/>{designName}<b>{num(v)}</b></div></div>
       <Plot label={title} traces={panels[key].traces} shapes={panels[key].shapes} notes={panels[key].notes} height={docked ? 190 : 330} compact={docked} legendY={-0.3} xTitle={docked ? 'Cycle length [years]' : 'Cycle length of the shock [years]'} yTitle={yTitle} logX logY reverseX xRange={[0.2, 60]} yRange={key === 'KS' ? [0.1, 300] : [0.01, 20]}/></section>;
   };
   const pct = (m: MonteCarlo) => `${Math.round(m.fraction * 100)}% stable (${m.stable} of ${m.n})`;
   return <div className={docked ? 'robust-docked' : 'robust-page'}>
-    {docked ? <div className="robust-legend"><span><i style={{ borderColor: COLORS.spec, borderTopStyle: 'dashed' }}/>limit (shaded: not met)</span><span><i style={{ borderColor: COLORS.zn, borderTopStyle: 'dotted', borderTopWidth: 3 }}/>Ziegler–Nichols</span><span><i style={{ borderColor: COLORS.hinf }}/>H∞ PID</span><span><i style={{ borderColor: COLORS.design, borderTopStyle: 'dotted' }}/>your design</span></div>
+    {docked ? <div className="robust-legend"><span><i style={{ borderColor: COLORS.spec, borderTopStyle: 'dashed' }}/>limit (shaded: not met)</span><span><i style={{ borderColor: COLORS.zn, borderTopStyle: 'dotted', borderTopWidth: 3 }}/>Ziegler–Nichols</span><span><i style={{ borderColor: COLORS.hinf }}/>H∞ PID</span>{!hinfIsDesign && <span><i style={{ borderColor: COLORS.design, borderTopStyle: 'dotted' }}/>your design</span>}</div>
       : <section className="panel"><h2>Robustness: does the policy survive a wrong model?</h2><p className="muted">Three curves against the cycle length of a shock, long cycles on the left. A design meets a limit when its curve stays out of the shaded area. Your design comes from the Root locus page.</p></section>}
     <div className="robust-grid">
       {card('S', 'S · Sensitivity', 'Share of a price shock of that cycle length that is left after the policy. Small is good: the government fights cycles longer than about 3 years.', '|S|')}
@@ -317,7 +320,7 @@ export function Robustness({ design, docked = false }: { design: Design; docked?
     <section className="panel"><div className="policy-head"><div><h2>Draw random markets</h2><p className="muted">Every resistor, inductor and capacitor in the netlist is multiplied by its own random factor within ± the chosen percentage. Counted: how many of 100 random markets the closed loop keeps stable.</p></div></div>
       <div className="mc-row"><label className="slider"><span className="slider-head"><span>Model uncertainty</span><output>± {perturb}%</output></span><input type="range" min={0} max={60} step={5} value={perturb} aria-label="Model uncertainty" onChange={e => setPerturb(Number(e.target.value))}/></label>
         <button className="primary" disabled={busy} onClick={draw}>{busy ? <LoaderCircle className="spin" size={15}/> : <Play size={15}/>} Draw 100 markets</button></div>
-      {mc && <div className="kpis three"><div className="kpi"><span>Your design</span><strong>{Math.round(mc.design.fraction * 100)}<em>%</em></strong><small>{pct(mc.design)}</small></div><div className="kpi"><span>Ziegler–Nichols (thesis gains)</span><strong>{Math.round(mc.zn.fraction * 100)}<em>%</em></strong><small>{pct(mc.zn)}</small></div><div className="kpi"><span>H∞ PID</span><strong>{Math.round(mc.hinf.fraction * 100)}<em>%</em></strong><small>{pct(mc.hinf)}</small></div></div>}
+      {mc && <div className="kpis three"><div className="kpi"><span>{designName}</span><strong>{Math.round(mc.design.fraction * 100)}<em>%</em></strong><small>{pct(mc.design)}</small></div><div className="kpi"><span>Ziegler–Nichols (thesis gains)</span><strong>{Math.round(mc.zn.fraction * 100)}<em>%</em></strong><small>{pct(mc.zn)}</small></div><div className="kpi"><span>H∞ PID</span><strong>{Math.round(mc.hinf.fraction * 100)}<em>%</em></strong><small>{pct(mc.hinf)}</small></div></div>}
       {mc && <p className="muted small">The S panel above now shows |S| of your design in 40 of these markets (red: unstable). Same 100 markets for every design; the percentages move a few points with a different random seed.</p>}
       {busy && !mc && <p className="muted small">The first draw at a new uncertainty builds 100 markets, about 8 seconds.</p>}
     </section>
