@@ -273,7 +273,7 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
     const y = result && info.signal ? readTrace(result, info.signal) : undefined, color = probes.muted && !steps ? MUTED : info.color;
     const st = steps && (info.step ? steps.responses[`${info.step.kind}:${info.step.id}`] : { error: 'An input: no step response' });
     const sent = probes.sensed.some(q => probeKey(q) === probeKey(p));
-    const S = sz(id, 'probe'), f = Math.max(1, Math.min(S.w / PIN_W, S.h / PIN_H)), pw = S.w - 12 * f, ph = S.h - 58 * f;
+    const S = sz(id, 'probe'), f = Math.max(1, Math.min(S.w / PIN_W, S.h / PIN_H)), pw = S.w - 12 * f, ph = S.h - (steps ? 40 : 58) * f;
     return <div key={id} className={'pin-card' + (steps ? ' step-mode' : '')} style={{ left: pos.x, top: pos.y, width: S.w, height: S.h, ['--s' as string]: f }} onPointerDown={drag(id, base)}>{handle(id, 'probe')}
       <div className="pin-head"><strong title={info.title}>{steps ? `${info.f.label} · step response` : info.title}</strong><PinTools keepOpen={!!probes.bodeFrom}>
         {(() => { const from = probes.bodeFrom, isFrom = !!from && probeKey(from) === probeKey(p), canIn = !!probeInput(map, p);
@@ -287,13 +287,13 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
           const [k0, unit] = stepSize(steps), tt = Object.values(steps.responses).find(r => r.t)?.t;
           if (!tt) return <small className="muted">Computing…</small>;
           const y0 = tt.map(t => t < 0 ? 0 : k0);
-          return <><MiniPlot y={[0, ...y0]} color={color} w={pw} h={ph} k={f}/><small>The shock: a step of {unit} at year 0</small></>; })()
+          return <><MiniPlot y={[0, ...y0]} color={color} w={pw} h={ph} k={f}/></>; })()
       : steps ? st?.y ? (() => {
           // The interest rate is a fraction (0.01 = 1%): its step is shown per +1 percentage point, not per +1.
           const [k0, unit] = stepSize(steps);
           const y1 = st.y!.map(v => v * k0), so = steps.open && info.step ? steps.open[`${info.step.kind}:${info.step.id}`]?.y : undefined;
           const g = so && so.length === y1.length ? so.map(v => v * k0) : undefined;
-          return <><MiniPlot y={y1} color={color} w={pw} h={ph} k={f} ghost={g} ghostColor="#8a9692"/><small>Step response to {steps.input} {unit} · after {st.t![st.t!.length - 1].toFixed(0)} yr: <b>{fmt(y1[y1.length - 1])}</b>{g ? <span className="ghost-note" style={{ color: '#8a9692' }}> · without the controller (grey dashed): {fmt(g[g.length - 1])}</span> : null}</small></>; })() : <small className="muted">{st?.error ?? 'Computing…'}</small>
+          return <><MiniPlot y={y1} color={color} w={pw} h={ph} k={f} ghost={g} ghostColor="#8a9692"/></>; })() : <small className="muted">{st?.error ?? 'Computing…'}</small>
         : y ? (() => {
           // Proposed parameters (identification): new R, L, C values also move the level, so the proposed run is
           // shifted to start where the current run starts; then only the dynamics differ.
@@ -744,7 +744,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     const place = (d: typeof firmD[number], side: 'left' | 'right', pts: Point[]) => (lines[d.id] = pts, sig(d.id, pts, { color: SHOCK, letter: 'd', name: d.label, sub: probes?.stepAt === d.id ? `Step ${probes.stepLabel ?? '+1'} enters here` : undefined, value: value(d.signal), markAt: 1, labelSide: side, selected: on({ kind: 'signal', id: d.id }) || !!probes?.pins.some(p => p.flow === d.id), pick: probes?.show ? (e?: React.MouseEvent) => e && probes.show!({ flow: d.id, q: 's' }, e) : () => select({ kind: 'signal', id: d.id }), target: { kind: 'signal', id: d.id } }));
     if (!view.system) {
       const x = group.x + group.w / 2;
-      if (nActive) sig('shocks', [[x, top + 60], [x, group.y]], { color: SHOCK, letter: 'd', name: 'Disturbance d', sub: probes?.stepAt && probes.stepAt !== 'y_reference' ? `Step ${probes.stepLabel ?? '+1'} in ${map.disturbances.find(x => x.id === probes.stepAt)?.label ?? ''}` : `Exogenous shocks & paths (${nActive})`, markAt: 1, labelSide: 'right', selected: selection.kind === 'shocks', pick: probes?.show && probes.stepAt && probes.stepAt !== 'y_reference' && probes.stepAt !== 'u_open' ? (e?: React.MouseEvent) => { if (e) probes.show!({ flow: probes.stepAt!, q: 's' }, e); } : () => select({ kind: 'shocks', id: '' }) });
+      if (nActive) sig('shocks', [[x, top + 60], [x, group.y]], { color: SHOCK, letter: 'd', name: 'Disturbance d', sub: probes?.stepAt && probes.stepAt.startsWith('d_') ? `Step ${probes.stepLabel ?? '+1'} in ${map.disturbances.find(x => x.id === probes.stepAt)?.label ?? ''}` : `Exogenous shocks & paths (${nActive})`, markAt: 1, labelSide: 'right', selected: selection.kind === 'shocks', pick: probes?.show && probes.stepAt && probes.stepAt !== 'y_reference' && probes.stepAt !== 'u_open' ? (e?: React.MouseEvent) => { if (e) probes.show!({ flow: probes.stepAt!, q: 's' }, e); } : () => select({ kind: 'shocks', id: '' }) });
     } else {
       // An open agent: the shock arrow runs on to the element it acts on (the path the drawing used to draw dashed).
       const into = (agent: string, side: 'left' | 'top', d: { element?: string }, i: number, n: number): Point[] => {
