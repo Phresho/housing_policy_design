@@ -395,3 +395,7 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { opac
 .formula-strip.side.L { border-right:1px dashed #c9b88f; } .formula-strip.side.R { border-left:1px dashed #c9b88f; }
 
 .robust-card h3 .econ { font-weight:500; font-size:.82em; color:#5f6b67; }
+
+/* robustness legend: larger, spread over the full dock width */
+.robust-docked .robust-legend { justify-content:space-between; font-size:14px; font-weight:500; gap:6px 16px; padding:6px 44px 6px 2px; }
+.robust-docked .robust-legend i { width:30px; border-top-width:3px; margin-right:7px; }
