@@ -387,3 +387,8 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { opac
 .map-node .block-grip { position:absolute; right:0; bottom:0; width:calc(18px * var(--lab, 1)); height:calc(18px * var(--lab, 1)); cursor:nwse-resize; z-index:6;
   background:linear-gradient(135deg, transparent 0 45%, #2b6599 45% 55%, transparent 55% 65%, #2b6599 65% 75%, transparent 75%); border-bottom-right-radius:inherit; opacity:.75; }
 .map-node .block-grip:hover { opacity:1; }
+
+/* CPB equations in the side panel (full system view) */
+.dock-formulas { margin:0 0 14px; padding:0 0 10px; border-bottom:1px solid #e3e8e5; }
+.dock-formulas h4 { margin:0 0 6px; } .dock-formulas .eyebrow { margin:8px 0 4px; }
+.dock-formulas .formulas { --eq: 0.85; } .dock-formulas .eq .eq-body { overflow-x:auto; overflow-y:hidden; }

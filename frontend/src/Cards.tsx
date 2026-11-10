@@ -55,18 +55,18 @@ export function SensBody({ K, filtered, settling, overshoot, w = 268, h = 168, k
     <span><b style={{ color: COLORS[name] }}>{name}</b> {what} <em className={ev.limits[name] <= 1 ? 'ok' : 'bad'}>{ev.limits[name] <= 1 ? 'met' : 'missed'} ({ev.limits[name].toFixed(2)})</em></span>
     <CyclePlot x={ov.cycle_yr} w={w} h={Math.round(h / 3)} k={k} lines={[{ y: bound, color: '#E8642B', dash: true, width: 1.5 }, { y, color: COLORS[name] }]}/></div>;
   return <>
-    {row('S', ev.S, ov.WP.map(v => 1 / v), 'shocks damped')}
-    {row('T', ev.T, ov.WT.map(v => 1 / v), 'silent where the model is wrong')}
-    {row('KS', ev.KS, ev.KS.map(() => ov.ks_limit), 'subsidy effort')}
+    {row('S', ev.S, ov.WP.map(v => 1 / v), 'sensitivity · price shock left')}
+    {row('T', ev.T, ov.WT.map(v => 1 / v), 'complementary sensitivity · model error reaching the price')}
+    {row('KS', ev.KS, ev.KS.map(() => ov.ks_limit), 'control sensitivity · subsidy per price shock')}
     <small>Dashed: the limit (thesis weights). Cycle length in years, long cycles left.</small>
   </>;
 }
 
 /** Year-on-year change: CBS bars (moved by `lag` months) behind the model line. */
-export function YoyBody({ year, model, cbs, lag, cpb, w = 356, h = 150, k = 1, ghost, color = '#3f9a1f' }: { year?: number[]; model?: number[]; cbs?: { year: number[]; yoy: number[] }; lag: number; cpb?: { year: number[]; yoy: number[] }; w?: number; h?: number; k?: number; ghost?: number[]; color?: string }) {
+export function YoyBody({ year, model, cbs, lag, cpb, w = 356, h = 150, k = 1, ghost, ghost2, color = '#3f9a1f' }: { year?: number[]; model?: number[]; cbs?: { year: number[]; yoy: number[] }; lag: number; cpb?: { year: number[]; yoy: number[] }; w?: number; h?: number; k?: number; ghost?: number[]; ghost2?: number[]; color?: string }) {
   if (!cbs && !model) return <small className="muted">No data yet.</small>;
   const x0 = 1996, x1 = 2027, cy = cbs ? cbs.year.map(v => v + lag / 12) : [];
-  const all = [...(cbs?.yoy ?? []), ...(model ?? []), ...(cpb?.yoy ?? []), ...(ghost ?? [])], lo = Math.min(-2, ...all), hi = Math.max(2, ...all);
+  const all = [...(cbs?.yoy ?? []), ...(model ?? []), ...(cpb?.yoy ?? []), ...(ghost ?? []), ...(ghost2 ?? [])], lo = Math.min(-2, ...all), hi = Math.max(2, ...all);
   const L = 26 * k, B = 16 * k, sx = (v: number) => L + (v - x0) / (x1 - x0) * (w - L - 4), sy = (v: number) => 6 * k + (hi - v) / (hi - lo) * (h - B - 6 * k), bw = (w - L - 4) / (x1 - x0) / 12;
   return <svg width={w} height={h} className="mini-plot">
     <rect x={0} y={0} width={w} height={h} fill="#fff"/>
@@ -75,6 +75,7 @@ export function YoyBody({ year, model, cbs, lag, cpb, w = 356, h = 150, k = 1, g
     {cbs && cy.map((t, i) => t >= x0 && t <= x1 && <rect key={i} x={sx(t) - bw * .4} width={bw * .8} y={Math.min(sy(0), sy(cbs.yoy[i]))} height={Math.abs(sy(cbs.yoy[i]) - sy(0))} fill="#c4c9c6"/>)}
     {cpb && <polyline fill="none" stroke="#3f9a1f" strokeWidth={2.6 * k} strokeDasharray={`${8 * k} ${5 * k}`} points={cpb.year.flatMap((t, i) => [`${sx(t)},${sy(cpb.yoy[i])}`, `${sx(t + 1)},${sy(cpb.yoy[i])}`]).join(' ')}/>}
     {ghost && year && ghost.length === year.length && <polyline fill="none" stroke="#8a9692" strokeWidth={2.6 * k} strokeDasharray={`${7 * k} ${4 * k}`} points={year.map((t, i) => `${sx(t)},${sy(ghost[i])}`).join(' ')}/>}
+    {ghost2 && year && ghost2.length === year.length && <polyline fill="none" stroke="#4a5550" strokeWidth={2.4 * k} strokeDasharray={`${1.5 * k} ${3.5 * k}`} strokeLinecap="round" points={year.map((t, i) => `${sx(t)},${sy(ghost2[i])}`).join(' ')}/>}
     {model && year && <polyline fill="none" stroke={color} strokeWidth={3 * k} strokeLinejoin="round" points={year.map((t, i) => `${sx(t)},${sy(model[i])}`).join(' ')}/>}
   </svg>;
 }

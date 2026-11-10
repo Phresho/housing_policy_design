@@ -37,7 +37,7 @@ export const TOUR: TourStep[] = [
     patch: { ...FITTED_CBS, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [subsidy, yoy], tuning: true, compare: true },
   { title: 'Disturbance rejection', text: 'The PID from the previous step (its gains carry over), hit by one unit shock: the financial crisis by default; pick another shock, such as the interest rate, in the side panel (right). Click the price or the subsidy to plot its step response with the controller; grey dashed: the same shock without it. Linear model, loop closed.',
     patch: { ...FITTED_CBS, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [price, subsidy], reject: 'd_crisis', keepGains: true },
-  { title: 'H∞ control', text: 'Same historical set with the bank, now the robust H∞ PID. Click a line to plot it (grey dashed: the open loop with the historical subsidies). The side panel (right): robustness (S, T, KS against their limits, random markets) and the Nyquist plot with gain and phase margin.',
+  { title: 'H∞ control', text: 'Same historical set with the bank, now the robust H∞ PID. Click a line to plot it (grey dashed: the open loop with the historical subsidies; the “⋯ Ziegler–Nichols PID” button in the toolbar adds the fast PID, dotted). The side panel (right): robustness (S, T, KS against their limits, random markets) and the Nyquist plot with gain and phase margin.',
     patch: { ...FITTED_CBS, feedback: true, controller: 'hinf', equilibrium_start: true }, pins: [subsidy, yoy, price], compare: true, robust: true },
 ];
 

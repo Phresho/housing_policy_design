@@ -46,6 +46,7 @@ export default function App() {
   };
   const [result, setResult] = useState<Result | null>(null);
   const [pinned, setPinned] = useState<Result | null>(null);
+  const [znRun, setZnRun] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -91,8 +92,11 @@ export default function App() {
     if (TOUR[i].cpbOverlay) { setShowCpb(true); setCpbScale(1); setCpbShift(0); }
     setS(next);
     // Steps with a comparison also run the same inputs open loop (historical subsidies), shown grey dashed.
-    const [r, open] = await Promise.all([api<Result>('/runs', next), TOUR[i].compare ? api<Result>('/runs', { ...next, feedback: false }) : Promise.resolve(null)]);
-    setPinned(open); setResult(r); setS(r.scenario);
+    // The H-inf step also runs the aggressive Ziegler-Nichols PID on the same inputs (dotted, when switched on).
+    const zn = catalogue.presets.zn;
+    const [r, open, znR] = await Promise.all([api<Result>('/runs', next), TOUR[i].compare ? api<Result>('/runs', { ...next, feedback: false }) : Promise.resolve(null),
+      TOUR[i].robust && zn ? api<Result>('/runs', { ...next, controller: 'zn', kp: zn.kp, ki: zn.ki, kd: zn.kd, derivative_filter: zn.filtered }) : Promise.resolve(null)]);
+    setPinned(open); setZnRun(znR); setResult(r); setS(r.scenario);
     setTour(t => ({ step: i, n: (t?.n ?? 0) + 1 }));
   });
   // In the tour, new model parameters (Use in the simulation / Back to the netlist values) run at once, so the
@@ -267,7 +271,7 @@ export default function App() {
 
       {/* One canvas: scenario and policy in the left dock, analyses on the canvas and in the right dock, results below. */}
       {tour && <TourBar step={tour.step} go={goTour} exit={() => setTour(null)} busy={busy}/>}
-      <div><ModelMap tour={tour ? { n: tour.n, pins: TOUR[tour.step].pins, ident: TOUR[tour.step].ident, tuning: TOUR[tour.step].tuning, compare: TOUR[tour.step].compare, cbs: TOUR[tour.step].cbs, expand: TOUR[tour.step].expand, formulas: TOUR[tour.step].formulas, reject: TOUR[tour.step].reject, robust: TOUR[tour.step].robust } : undefined} scenario={s} result={result} pinned={pinned} busy={busy} run={simulate} setFeedback={feedback => update({ feedback })} update={update} design={design} setDesign={setDesign} cbs={cbs} lag={lag ?? cbs?.lag_months ?? 0} cpb={cpbShown}
+      <div><ModelMap tour={tour ? { n: tour.n, pins: TOUR[tour.step].pins, ident: TOUR[tour.step].ident, tuning: TOUR[tour.step].tuning, compare: TOUR[tour.step].compare, cbs: TOUR[tour.step].cbs, expand: TOUR[tour.step].expand, formulas: TOUR[tour.step].formulas, reject: TOUR[tour.step].reject, robust: TOUR[tour.step].robust } : undefined} scenario={s} result={result} pinned={pinned} zn={tour && TOUR[tour.step].robust ? znRun : null} busy={busy} run={simulate} setFeedback={feedback => update({ feedback })} update={update} design={design} setDesign={setDesign} cbs={cbs} lag={lag ?? cbs?.lag_months ?? 0} cpb={cpbShown}
         left={<><div className="left-head"><div><p className="eyebrow">Disturbances d</p><h3>Economic scenario</h3></div><button className="ghost small" title="Back to the start values: every slider, switch, controller and model parameter" onClick={() => update({ ...catalogue.defaults, name: s.name })}><RotateCcw size={14}/> Reset all</button></div><p className="muted small">Scales of the historical inputs; 1.00 is the netlist path. Click a group to open it. A dot marks a group that differs from the start values. Run again to see the effect.</p>{scenarioControls}<hr/><p className="eyebrow">Reference r and controller</p><h3>Policy</h3>{policyControls}<button className="primary" disabled={busy} onClick={simulate}><Play size={15}/> Run simulation</button></>}/></div>
 
 
