@@ -9,6 +9,6 @@ await page.getByRole('button', { name: 'Guided tour' }).click(); await page.loca
 await page.getByRole('button', { name: /^Step 10:/ }).click(); await page.locator('.tour-steps button.on', { hasText: /^10$/ }).waitFor({ timeout: 120000 }); await page.waitForTimeout(8000);
 await page.locator('.react-flow__node[data-id="system"] button').first().dispatchEvent('click'); await page.waitForTimeout(1500);
 await page.locator('.react-flow__controls-fitview').click(); await page.waitForTimeout(1500);
-for (const id of ['d_covid', 'yout']) { const e = page.locator(`.react-flow__edge[data-id="${id}"] path`).last(); const b = await e.boundingBox(); if (b) { await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2); await page.waitForTimeout(600); } } await page.waitForTimeout(2000);
+for (const id of ['d_covid', 'yout', 'r', 'e']) { const e = page.locator(`.react-flow__edge[data-id="${id}"] path`).last(); const b = await e.boundingBox(); if (b) { await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2); await page.waitForTimeout(600); } } await page.waitForTimeout(2000);
 const cards = await page.locator('.pin-card').evaluateAll(cs => cs.map(c => ({ title: c.querySelector('.pin-head strong')?.textContent, ghost: c.querySelectorAll('polyline[stroke-dasharray]').length, note: c.querySelector('small')?.textContent })));
 console.log(JSON.stringify({ cards, errors }, null, 1)); process.exit(0);

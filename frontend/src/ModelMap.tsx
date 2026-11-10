@@ -298,8 +298,8 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
           // Proposed parameters (identification): new R, L, C values also move the level, so the proposed run is
           // shifted to start where the current run starts; then only the dynamics differ.
           // or (tour) the open-loop run with the historical subsidies, grey dashed, as it is.
-          // disturbances are inputs: no comparison line on their cards
-          const cmp = p.flow.startsWith('d_') ? null : probes.compare, g0 = cmp && info.signal ? readTrace(cmp.result, info.signal) : undefined;
+          // inputs (disturbances, the target r) and the gap e have no open-loop counterpart: no comparison line on their cards
+          const cmp = p.flow.startsWith('d_') || p.flow === 'y_reference' || p.flow === 'y_error' ? null : probes.compare, g0 = cmp && info.signal ? readTrace(cmp.result, info.signal) : undefined;
           const g = g0 && g0.length === y.length ? (cmp!.align ? g0.map(v => v - g0[0] + y[0]) : g0) : undefined;
           if (p.flow === 'y_yoy' && p.q === 's') {
             // year-on-year: the CBS index as grey bars behind it, as in the CBS card (model + inflation for the nominal index)
