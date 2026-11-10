@@ -36,16 +36,13 @@ function PoleMap({ id, nominal, preview, path }: { id: Ident; nominal?: Ident; p
   const box = useRef<HTMLDivElement>(null);
   const dom = id.metrics.dominant;
   const pathDom = (preview ? path ?? [] : []).map(st => st.dominant).filter((d): d is [number, number] => !!d);
-  const x0 = Math.min(-2.5, ...(dom ? [dom.re * 2.2] : []), ...pathDom.map(d => d[0] * 1.25));
-  // widen to take in the nearest faster pair too (when it is within 1.4x), so it does not drop just off the left edge
-  const nextRe = [...new Set(id.poles.filter(p => p.re < x0).map(p => +p.re.toFixed(6)))].sort((a, b) => b - a)[0];
-  const xmin = nextRe !== undefined && nextRe > 1.4 * x0 ? nextRe * 1.12 : x0;
+  const xmin = Math.min(-2.5, ...(dom ? [dom.re * 2.2] : []), ...pathDom.map(d => d[0] * 1.25));
   const shown = (p: IdPole) => p.re >= xmin;
   // every pole drawn fits: current, proposed, and the dots of the path between them
   const trailIm = (preview ? path ?? [] : []).flatMap(st => st.poles.filter(q => q[0] >= xmin).map(q => Math.abs(q[1])));
-  const ims = [...id.poles.filter(shown).map(p => Math.abs(p.im)), ...pathDom.map(d => d[1]), ...trailIm, ...(preview?.poles.filter(shown).map(p => Math.abs(p.im)) ?? [])], ymax = Math.max(1, ...ims) * 1.15;
+  const ims = [...id.poles.filter(shown).map(p => Math.abs(p.im)), ...pathDom.map(d => d[1]), ...trailIm, ...(preview?.poles.filter(shown).map(p => Math.abs(p.im)) ?? [])], ymax = Math.max(1, ...ims) * 1.3;
   // cycle ticks at least ymax/7 apart, so the long cycles near the axis do not pile up
-  const cyc = [1, 1.5, 2, 3, 5, 10, 20].filter(c => 2 * Math.PI / c <= ymax).filter((c, i, a) => i === 0 || 2 * Math.PI / a[i - 1] - 2 * Math.PI / c >= ymax / 7);
+  const cyc = [1, 1.5, 2, 3, 5, 10, 20].filter(c => 2 * Math.PI / c <= ymax && 2 * Math.PI / c >= ymax / 6).reduce<number[]>((kept, c) => kept.length && 2 * Math.PI / kept[kept.length - 1] - 2 * Math.PI / c < ymax / 6 ? kept : [...kept, c], []);
   const ticks = [...cyc.map(c => 2 * Math.PI / c), 0, ...cyc.map(c => -2 * Math.PI / c)];
   const ticktext = [...cyc.map(c => `${c} yr`), '0', ...cyc.map(c => `${c} yr`)];
   const off = id.poles.filter(p => !shown(p)).length;
@@ -68,7 +65,7 @@ function PoleMap({ id, nominal, preview, path }: { id: Ident; nominal?: Ident; p
   const guide = (d: { re: number; im: number } | null | undefined, color: string, below: boolean) => !d ? { shapes: [], notes: [] } : {
     shapes: [{ type: 'line', x0: xmin, x1: d.re, y0: d.im, y1: d.im, line: { color, width: 1.6, dash: 'dash' } }, { type: 'line', x0: d.re, x1: d.re, y0: 0, y1: d.im, line: { color, width: 1.6, dash: 'dash' } }],
     notes: [{ x: xmin, y: d.im, xanchor: 'left', yanchor: below ? 'top' : 'bottom', yshift: below ? -3 : 3, xshift: 4, text: `cycle ${fmt(2 * Math.PI / d.im, 1)} yr`, showarrow: false, font: { color, size: 12.5 } },
-      { x: d.re, y: 0, xanchor: 'left', yanchor: below ? 'bottom' : 'top', xshift: 5, yshift: below ? 3 : -3, text: `adjustment ≈ ${fmt(-Math.log(0.05) / -d.re, 1)} yr`, showarrow: false, font: { color, size: 12 } }],
+      { x: d.re, y: 0, xanchor: d.re > xmin * 0.3 ? 'right' : 'left', yanchor: below ? 'bottom' : 'top', xshift: d.re > xmin * 0.3 ? -5 : 5, yshift: below ? 3 : -3, text: `adjustment ≈ ${fmt(-Math.log(0.05) / -d.re, 1)} yr`, showarrow: false, font: { color, size: 12 } }],
   };
   const gNow = guide(dom, GREEN, false), gNew = guide(preview?.metrics.dominant, BLUE, true);
   const guides = [...gNow.shapes, ...gNew.shapes];
@@ -77,9 +74,9 @@ function PoleMap({ id, nominal, preview, path }: { id: Ident; nominal?: Ident; p
     const [x1, y1] = pathDom[k], [x0, y0] = pathDom[Math.max(0, k - 1)];
     if (Math.hypot(x1 - x0, y1 - y0) > 1e-4) notes.push({ x: x1, y: sgn * y1, ax: x0, ay: sgn * y0, axref: 'x', ayref: 'y', text: '', showarrow: true, arrowhead: 2, arrowsize: 1.4, arrowwidth: 2, arrowcolor: tone } as never);
   }
-  if (off) notes.push({ x: xmin, y: -ymax * 0.92, xanchor: 'left', text: `${off} faster pole${off > 1 ? 's' : ''} further left`, showarrow: false, font: { color: GREY, size: 11 } } as never);
+  if (off) notes.push({ xref: 'paper', yref: 'paper', x: 0, y: 1, xanchor: 'left', yanchor: 'bottom', yshift: 2, text: `← ${off} faster pole${off > 1 ? 's' : ''} further left`, showarrow: false, font: { color: GREY, size: 11 } } as never);
   usePlotly(box, data, {
-    ...BASE, height: moving || preview ? 360 : 330, margin: { l: 64, r: 14, t: 8, b: moving || preview ? 108 : 88 }, legend: { orientation: 'h', y: -0.27, yanchor: 'top', entrywidth: 0.5, entrywidthmode: 'fraction', font: { size: 11 }, tracegroupgap: 0 },
+    ...BASE, height: moving || preview ? 370 : 340, margin: { l: 64, r: 14, t: 22, b: moving || preview ? 108 : 88 }, legend: { orientation: 'h', y: -0.27, yanchor: 'top', entrywidth: 0.5, entrywidthmode: 'fraction', font: { size: 11 }, tracegroupgap: 0 },
     shapes: [...guides, { type: 'rect', xref: 'x', yref: 'paper', x0: 0, x1: 1e3, y0: 0, y1: 1, fillcolor: 'rgba(197,53,42,0.12)', line: { width: 0 }, layer: 'below' },
       { type: 'line', xref: 'x', yref: 'paper', x0: 0, x1: 0, y0: 0, y1: 1, line: { color: '#1f2a26', width: 1.5 } }],
     annotations: [...notes, { x: 0.15, y: ymax * 0.8, text: 'unstable', showarrow: false, font: { color: RED, size: 11 }, textangle: -90 }],
