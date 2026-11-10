@@ -90,7 +90,7 @@ function assignLanes(wires: Wire[], channels: Record<string, [number, number]>) 
 }
 
 // ---------- nodes
-type BlockData = { label: string; sub?: string; tone: string; width: number; height: number; selected?: boolean; children?: React.ReactNode; toggle?: () => void; open?: boolean; tab?: 'tl' | 'br' | 'bl' | 'above'; headSpace?: number };
+type BlockData = { label: string; sub?: string; tone: string; width: number; height: number; selected?: boolean; children?: React.ReactNode; toggle?: () => void; open?: boolean; tab?: 'tl' | 'br' | 'bl' | 'above'; headSpace?: number; scale?: number; resize?: (scale: number) => void };
 // Open CBS block: how the published numbers are made from the two measurements (netlist 19okt):
 //   house price index  = I(Construction_cost) = x1, unscaled;
 //   year-on-year (%)   = (x1(t) - x1(t - 1 yr)) / x1(t - 1 yr) x 100   (B§Year_on_year_change1, delay 6 s = 1 year);
@@ -129,11 +129,30 @@ function CbsCircuit() {
     <text className="cbs-note" x={20} y={500}>{result ? `Values in ${year}. ` : ''}Year-on-year needs one year of history: it starts after the first model year.</text>
   </svg>;
 }
+// Drag handle in the bottom-right corner (opened controller): the block grows or shrinks, the layout follows.
+function Grip({ data }: { data: BlockData }) {
+  const k = useStore(s => s.transform[2]), last = useRef(0);
+  const down = (e: React.PointerEvent) => {
+    e.stopPropagation(); e.preventDefault();
+    // two presses within 350 ms: back to the original size
+    if (e.timeStamp - last.current < 350) { last.current = 0; data.resize!(1); return; }
+    last.current = e.timeStamp;
+    const x0 = e.clientX, y0 = e.clientY, s0 = data.scale ?? 1, w0 = data.width, h0 = data.height;
+    let raf = 0;
+    const move = (ev: PointerEvent) => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => {
+      const f = Math.max((w0 + (ev.clientX - x0) / k) / w0, (h0 + (ev.clientY - y0) / k) / h0);
+      data.resize!(Math.min(3, Math.max(0.6, +(s0 * f).toFixed(3)))); }); };
+    const up = () => { cancelAnimationFrame(raf); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  };
+  return <div className="block-grip nodrag nopan" role="separator" aria-label={`Resize ${data.label}`} title="Drag to make the block bigger or smaller (double-click: original size)"
+    onPointerDown={down} onClick={e => e.stopPropagation()}/>;
+}
 function Block({ data }: NodeProps<Node<BlockData>>) {
   const button = data.toggle && <button className="toggle nodrag" aria-label={`${data.open ? 'Collapse' : 'Expand'} ${data.label}`} onClick={e => { e.stopPropagation(); data.toggle!(); }}>{data.open ? <Minus size={13}/> : <Plus size={13}/>}</button>;
   return <div className={`map-node ${data.tone}${data.open ? ' open' : ''}${data.selected ? ' selected' : ''}`} style={{ width: data.width, height: data.height }}>
     <Handle type="target" position={Position.Left} className="hidden-handle"/><Handle type="source" position={Position.Right} className="hidden-handle"/>
-    {data.open ? data.headSpace ? <div className="open-body" style={{ top: data.headSpace }}>{data.children}</div> : <>{data.children}</> : data.label ? <><div className="block-head"><strong>{data.label.replace('\n', ' ')}</strong>{button}</div><div className="block-body">{data.sub && <span>{data.sub}</span>}{data.children}</div></> : <>{button}{data.children}</>}
+    {data.open && data.resize && <Grip data={data}/>}{data.open ? data.headSpace ? <div className="open-body" style={{ top: data.headSpace }}>{data.children}</div> : <>{data.children}</> : data.label ? <><div className="block-head"><strong>{data.label.replace('\n', ' ')}</strong>{button}</div><div className="block-body">{data.sub && <span>{data.sub}</span>}{data.children}</div></> : <>{button}{data.children}</>}
   </div>;
 }
 // ---------- probes: one effort e and one flow f per port (supervisor 3.1-3.3)
@@ -513,7 +532,7 @@ function Inspector({ map, selection, pick, result, pinned, scenario, enter, laye
     {layout.not_drawn.length > 0 && <p className="not-drawn">Not drawn, not in the circuit: {layout.not_drawn.join(', ')}</p>}</>;
 }
 
-type View = { system: boolean; cpb: boolean; finance: boolean; controller: boolean; agents: string[]; cbs?: boolean; formulas?: boolean; noParliament?: boolean };
+type View = { system: boolean; cpb: boolean; finance: boolean; controller: boolean; agents: string[]; cbs?: boolean; formulas?: boolean; noParliament?: boolean; ctrlScale?: number };
 const CPB_AGENTS = ['constructors', 'investors', 'firms', 'households'];
 const CHANNEL: Record<string, string> = {
   construction_cost: 'c12', houses: 'c12', consumption: 'c12', income: 'c12', goods: 'c12',
@@ -640,7 +659,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     }
     const gc = group.y + group.h / 2;
     // ---- controller, its ports set the subsidy and error heights
-    const ctrlSize: Point = view.controller ? [CONTROLLER_SIZE[0] * SCALE.controller, CONTROLLER_SIZE[1] * SCALE.controller] : [210 * lab, 150 * lab];
+    const cs = SCALE.controller * (view.ctrlScale ?? 1), ctrlSize: Point = view.controller ? [CONTROLLER_SIZE[0] * cs, CONTROLLER_SIZE[1] * cs] : [210 * lab, 150 * lab];
     const target = view.system ? (view.cpb ? null : R.cpb) : group;
     // Top layer: every block centred on one line through the system; the two subsidies leave symmetric about it.
     const loopOnly = !view.system && !view.controller;
@@ -661,7 +680,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     if (!view.noParliament) block('parliament', parl, { label: 'Parliament', tone: scenario.feedback ? 'reference' : 'reference loop-off', selected: on({ kind: 'signal', id: 'y_reference' }) });
     block('sum', sum, { tone: scenario.feedback ? 'summing' : 'summing loop-off' });
     block('controller', ctrl, view.controller
-      ? { label: 'Tax Authority · Controller', tone: 'controller', open: true, tab: 'above', headSpace: ctrlHead, toggle: () => toggle('controller'), children: <ControllerCircuit map={map} scenario={scenario} selection={selection} pick={select} step={step}/> }
+      ? { label: 'Tax Authority · Controller', tone: 'controller', open: true, tab: 'above', headSpace: ctrlHead, toggle: () => toggle('controller'), scale: view.ctrlScale ?? 1, resize: (v: number) => toggle(`ctrl-scale:${v}`), children: <ControllerCircuit map={map} scenario={scenario} selection={selection} pick={select} step={step}/> }
       : { label: 'Tax Authority', tone: 'controller', toggle: () => toggle('controller'), selected: on({ kind: 'agent', id: 'controller' }) });
     block('sensor', sensor, view.cbs ? { label: 'CBS · how the index is made', tone: 'sensor-open', open: true, tab: 'above', headSpace: cbsHead, toggle: () => toggle('cbs'), children: <CbsCircuit/> }
       : { label: 'CBS', tone: 'sensor', selected: selection.kind === 'sensor', toggle: () => toggle('cbs') });
@@ -804,8 +823,9 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
 function Canvas({ map, view, setView, scenario, result, at, selection, select, focus, menu, flip, probes, step, steps, lab = 1 }: { lab?: number; map: MapData; view: View; setView: (v: View) => void; scenario: Scenario; result: Result | null; at: number; selection: Selection; select: (s: Selection) => void; focus: { id: string; n: number }; menu: (s: Selection, e: React.MouseEvent) => void; flip: () => void; probes: ProbeState; step: (k: GainKey, up: boolean) => void; steps?: StepData }) {
   const flow = useReactFlow();
   const toggle = (k: string) => {
-    if (k === 'system') setView({ system: !view.system, cpb: false, finance: false, controller: view.controller, agents: [], noParliament: view.noParliament });
+    if (k === 'system') setView({ system: !view.system, cpb: false, finance: false, controller: view.controller, agents: [], noParliament: view.noParliament, ctrlScale: view.ctrlScale });
     else if (k === 'controller') setView({ ...view, controller: !view.controller });
+    else if (k.startsWith('ctrl-scale:')) setView({ ...view, ctrlScale: Number(k.slice(11)) });
     else if (k === 'cbs') setView({ ...view, cbs: !view.cbs });
     else if (k === 'cpb') setView({ ...view, cpb: !view.cpb, agents: view.agents.filter(a => !CPB_AGENTS.includes(a)) });
     else if (k === 'finance') setView({ ...view, finance: !view.finance, agents: view.agents.filter(a => a !== 'bank') });
@@ -888,7 +908,7 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
     if (!tour) return;
     // expand: the Housing Market fully open, every CPB agent showing its elements (the financial sector too when the bank is on).
     if (tour.reject) setStepInput(tour.reject);
-    setViewState(v => ({ ...(tour.formulas ? { system: true, cpb: true, finance: false, controller: false, agents: [], formulas: true } : tour.reject ? { ...CLOSED, controller: true } : tour.expand ? { system: true, cpb: true, finance: scenario.bank, controller: false, agents: scenario.bank ? [...CPB_AGENTS, 'bank'] : [...CPB_AGENTS] } : tour.tuning ? { ...CLOSED, controller: true } : CLOSED), noParliament: v.noParliament })); setSelection(tour.ident ? { kind: 'ident', id: '' } : tour.tuning || tour.reject ? { kind: 'agent', id: 'controller' } : tour.robust ? { kind: 'robust', id: '' } : NONE); setCharts([]); setSensed([]); setPinPos({}); setPins([]);  // no plots open by themselves: the step sets up the analysis, the user opens it setFocus(f => ({ id: tour.expand || tour.formulas ? 'system' : '', n: f.n + 1 }));
+    setViewState(v => ({ ...(tour.formulas ? { system: true, cpb: true, finance: false, controller: false, agents: [], formulas: true } : tour.reject ? { ...CLOSED, controller: true } : tour.expand ? { system: true, cpb: true, finance: scenario.bank, controller: false, agents: scenario.bank ? [...CPB_AGENTS, 'bank'] : [...CPB_AGENTS] } : tour.tuning ? { ...CLOSED, controller: true } : CLOSED), noParliament: v.noParliament, ctrlScale: v.ctrlScale })); setSelection(tour.ident ? { kind: 'ident', id: '' } : tour.tuning || tour.reject ? { kind: 'agent', id: 'controller' } : tour.robust ? { kind: 'robust', id: '' } : NONE); setCharts([]); setSensed([]); setPinPos({}); setPins([]);  // no plots open by themselves: the step sets up the analysis, the user opens it setFocus(f => ({ id: tour.expand || tour.formulas ? 'system' : '', n: f.n + 1 }));
   }, [tour?.n]);
   const [bodeFrom, setBodeFrom] = useState<Probe | null>(null);
   const ctx = useMemo<Ctx>(() => ({ K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, feedback: scenario.feedback, settling: design.settling, overshoot: design.overshoot }), [scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.feedback, design.settling, design.overshoot]);
@@ -898,7 +918,11 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   // In the tour the identification dock sits next to time plots, so the cards stay time plots there.
   // Disturbance rejection step of the tour: the cards show step responses to a unit shock (closed loop, open loop grey)
   const tourReject = !!tour?.reject;
-  const ident = selection.kind === 'ident', stepping = (!tour && (tuning || ident)) || (tourReject && tuning);
+  // What the plot cards show: chosen with the toolbar switch, or (not chosen) step responses while the controller or the
+  // identification is selected. The disturbance-rejection step starts on step responses, so a misclick keeps them.
+  const [plotMode, setPlotMode] = useState<'time' | 'step' | null>(null);
+  useEffect(() => { setPlotMode(tour?.reject ? 'step' : null); }, [tour?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ident = selection.kind === 'ident', stepping = plotMode ? plotMode === 'step' : (!tour && (tuning || ident)) || (tourReject && tuning);
   const [stepChoice, setStepInput] = useState('y_reference');
   // Loop open: the target does nothing, so the default step is the controller output u.
   const stepInput = ident ? 'u_open' : !scenario.feedback && stepChoice === 'y_reference' ? 'u_open' : stepChoice;
@@ -949,6 +973,8 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   }, [playing, result]);
   const togglePlay = () => { if (!result) return; setPlayed(true); if (!playing && at >= result.year.length - 1) setIndex(0); setPlaying(p => !p); };
   const setView = (next: View) => {
+    // resizing the controller only: keep the zoom (no refit), so the block grows under the mouse
+    if (next.ctrlScale !== view.ctrlScale && JSON.stringify({ ...next, ctrlScale: 0 }) === JSON.stringify({ ...view, ctrlScale: 0 })) { setViewState(next); return; }
     const opened = next.agents.find(a => !view.agents.includes(a)) ?? (next.controller && !view.controller ? 'controller' : next.cbs && !view.cbs ? 'sensor' : next.cpb && !view.cpb ? 'cpb' : next.finance && !view.finance ? 'finance' : next.system && !view.system ? 'system' : '');
     const parent = (a: string) => CPB_AGENTS.includes(a) ? 'cpb' : a === 'bank' ? 'finance' : 'system';
     const closedAgent = view.agents.find(a => !next.agents.includes(a));
@@ -961,13 +987,14 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   return <section className="panel map-panel">
     <div className="map-head"><div className="row">
       <button className="ghost" onClick={() => setFocus(f => ({ id: '', n: f.n + 1 }))}><Maximize2 size={14}/> Whole model</button>
-      <button className="ghost" disabled={!view.system && !view.controller} onClick={() => setView({ ...CLOSED, noParliament: view.noParliament })}><Minus size={14}/> Collapse all</button>
+      <button className="ghost" disabled={!view.system && !view.controller} onClick={() => setView({ ...CLOSED, noParliament: view.noParliament, ctrlScale: view.ctrlScale })}><Minus size={14}/> Collapse all</button>
       <button className={ident ? 'secondary' : 'ghost'} title="Open loop: poles and step response from the subsidy to the house price, and change the model parameters" onClick={() => { if (ident) { setSelection({ kind: 'none', id: '' }); return; } setDock(true); setSelection({ kind: 'ident', id: '' }); setPins(old => old.some(p => p.flow === 'y_price' && p.q === 's') ? old : [...old, { flow: 'y_price', q: 's' }]); }}><Activity size={14}/> Identify system</button>
       <button className={selection.kind === 'robust' ? 'secondary' : 'ghost'} title="S, T and KS of the current controller against the limits, and random markets, in the side panel" onClick={() => { if (selection.kind === 'robust') { setSelection({ kind: 'none', id: '' }); return; } setDock(true); setSelection({ kind: 'robust', id: '' }); }}><ShieldCheck size={14}/> Robustness</button>
       <button className={view.formulas ? 'secondary' : 'ghost'} aria-pressed={!!view.formulas} title="Show the CPB equations on the agents (click one to light up its flows and elements)" onClick={() => setView(view.formulas ? { ...view, formulas: false } : { ...view, system: true, cpb: true, formulas: true })}><Sigma size={14}/> CPB formulas</button>
       <button className="ghost" data-no-shot title="Save the canvas (and the open side panels) as a high-resolution PNG (3x)" disabled={shooting} onClick={shootCanvas}>{shooting ? <LoaderCircle className="spin" size={14}/> : <Camera size={14}/>} Screenshot canvas</button>
       <label className="label-size" title="Size of block headers, signal names and the Parliament, Tax Authority and CBS blocks">Label size <output>{lab.toFixed(1)}×</output><input type="range" aria-label="Label size" min={1} max={2.5} step={0.1} value={lab} onChange={e => setLab(Number(e.target.value))}/></label>
     </div>
+      <div className="segmented small" role="group" aria-label="Plots show" title="What the plot cards on the canvas show: the simulated path over time, or the response to a step (choose the step's input in the controller panel)"><button className={!stepping ? 'active' : ''} aria-pressed={!stepping} onClick={() => setPlotMode('time')}>Time path</button><button className={stepping ? 'active' : ''} aria-pressed={stepping} onClick={() => setPlotMode('step')}>Step response</button></div>
       <div className="segmented small" role="group" aria-label="Feedback"><button className={!scenario.feedback ? 'active' : ''} aria-pressed={!scenario.feedback} onClick={() => setFeedback(false)}>Open loop</button><button className={scenario.feedback ? 'active' : ''} aria-pressed={scenario.feedback} onClick={() => setFeedback(true)}>Closed loop</button></div>
       {result ? <label className="year-slider"><button type="button" className="ghost play" data-no-shot aria-label={playing ? 'Pause' : 'Play through time'} title={playing ? 'Pause' : 'Play: run the plots through time'} onClick={e => { e.preventDefault(); togglePlay(); }}>{playing ? <Pause size={14}/> : <Play size={14}/>}</button>Values in <output>{result.year[at].toFixed(1)}</output><input type="range" aria-label="Year for the values on the map" min={0} max={result.year.length - 1} value={at} onChange={e => { setPlaying(false); setPlayed(true); setIndex(Number(e.target.value)); }}/></label> : <button className="primary" disabled={busy} onClick={run}>Run to show values</button>}</div>
     <div className="map-body" ref={bodyRef} style={{ gridTemplateColumns: `${left ? (leftOpen ? '290px ' : '34px ') : ''}minmax(0,1fr) ${!dock ? '34px' : selection.kind === 'ident' || selection.kind === 'robust' ? '520px' : selection.kind === 'agent' && selection.id === 'controller' ? '460px' : '340px'}` }}>
