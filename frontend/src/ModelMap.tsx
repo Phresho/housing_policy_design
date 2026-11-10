@@ -524,7 +524,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     const on = (s: Selection) => selection.kind === s.kind && selection.id === s.id;
     const nodes: Node[] = [], edges: Edge[] = [], railStart: Record<string, Point> = {}, pinDefault: Record<string, XY> = {}, lines: Record<string, Point[]> = {};
     const block = (id: string, r: Rect, data: Partial<BlockData>, z = 1) => nodes.push({ id, type: 'block', position: { x: r.x, y: r.y }, draggable: false, zIndex: z, data: { label: '', tone: '', width: r.w, height: r.h, ...data } });
-    const sig = (id: string, points: Point[], data: Omit<SignalData, 'points'>) => edges.push({ id, source: 'anchor', target: 'anchor', type: 'signal', zIndex: 5, data: { points, lab, ...data, menu: data.target ? (e: React.MouseEvent) => menu(data.target!, e) : undefined } });
+    const sig = (id: string, points: Point[], data: Omit<SignalData, 'points'>) => edges.push({ id, source: 'anchor', target: 'anchor', type: 'signal', zIndex: 5, className: data.target?.kind === 'flow' && lit(data.target.id) ? 'lit' : undefined, data: { points, lab, ...data, menu: data.target ? (e: React.MouseEvent) => menu(data.target!, e) : undefined } });
     const card = (id: string) => probes?.show ? (e?: React.MouseEvent) => { if (e) probes.show!({ flow: id, q: 's' }, e); } : undefined;
     const GX = 640, GY = 300;
     const R: Record<string, Rect> = {}, scale: Record<string, number> = {};
@@ -602,7 +602,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
         const pts = paths[f.id], { a } = info[f.id], n0 = along([0, 0], [-(pts[1][1] - pts[0][1]), pts[1][0] - pts[0][0]], 1);
         const side = Math.sign(n0[0] * (a.ret[0] - a.p[0]) + n0[1] * (a.ret[1] - a.p[1])) || 1;
         nth[CHANNEL[f.id]] = (nth[CHANNEL[f.id]] ?? -1) + 1;
-        edges.push({ id: f.id, source: 'anchor', target: 'anchor', type: 'rail', zIndex: 4, data: { points: pts, side, color: COLOR[f.kind], name: f.short, value: value(f.signal), labelT: nth[CHANNEL[f.id]] % 2 ? .7 : .3, selected: on({ kind: 'flow', id: f.id }) || lit(f.id), pick: f.port && probes?.show ? (e?: React.MouseEvent) => e && probes.show!({ flow: f.id, q: 'f' }, e) : () => select({ kind: 'flow', id: f.id }), menu: (e: React.MouseEvent) => menu({ kind: 'flow', id: f.id }, e), probe: f.port && probes?.show ? (q: 'e' | 'f', e: React.MouseEvent) => probes.show!({ flow: f.id, q }, e) : undefined, probed: (['e', 'f'] as const).filter(q => on({ kind: 'probe', id: `${f.id}:${q}` }) || !!probes?.pins.some(p => p.flow === f.id && p.q === q) || !!probes?.sensed.some(p => p.flow === f.id && p.q === q)) } });
+        edges.push({ id: f.id, source: 'anchor', target: 'anchor', type: 'rail', zIndex: 4, className: lit(f.id) ? 'lit' : undefined, data: { points: pts, side, color: COLOR[f.kind], name: f.short, value: value(f.signal), labelT: nth[CHANNEL[f.id]] % 2 ? .7 : .3, selected: on({ kind: 'flow', id: f.id }) || lit(f.id), pick: f.port && probes?.show ? (e?: React.MouseEvent) => e && probes.show!({ flow: f.id, q: 'f' }, e) : () => select({ kind: 'flow', id: f.id }), menu: (e: React.MouseEvent) => menu({ kind: 'flow', id: f.id }, e), probe: f.port && probes?.show ? (q: 'e' | 'f', e: React.MouseEvent) => probes.show!({ flow: f.id, q }, e) : undefined, probed: (['e', 'f'] as const).filter(q => on({ kind: 'probe', id: `${f.id}:${q}` }) || !!probes?.pins.some(p => p.flow === f.id && p.q === q) || !!probes?.sensed.some(p => p.flow === f.id && p.q === q)) } });
       });
     }
     const gc = group.y + group.h / 2;
@@ -779,7 +779,7 @@ function Canvas({ map, view, setView, scenario, result, at, selection, select, f
     t = window.setTimeout(go, 40);
     return () => { live = false; clearTimeout(t); };
   }, [focus.n]);
-  return <AtContext.Provider value={{ result, at }}><ReactFlow nodes={shown} edges={graph.edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} zoomOnDoubleClick={false} fitView fitViewOptions={{ padding: .04 }} nodesConnectable={false} nodesDraggable={false} elementsSelectable={false} minZoom={.1} maxZoom={4} proOptions={{ hideAttribution: true }}
+  return <AtContext.Provider value={{ result, at }}><ReactFlow className={hl ? 'hl-on' : undefined} nodes={shown} edges={graph.edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} zoomOnDoubleClick={false} fitView fitViewOptions={{ padding: .04 }} nodesConnectable={false} nodesDraggable={false} elementsSelectable={false} minZoom={.1} maxZoom={4} proOptions={{ hideAttribution: true }}
     onNodeClick={(_, n) => {
       if (n.id === 'sensor' && view.cbs) return;
       if (n.id === 'sensor') { const at = flow.screenToFlowPosition({ x: _.clientX, y: _.clientY }); probes.addChart({ id: 'cbs', kind: 'cbs' }, { x: at.x - 190, y: at.y - 230 }); }

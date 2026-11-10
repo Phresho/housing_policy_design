@@ -357,3 +357,10 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { opac
 .circuit-below { position:absolute; left:0; right:0; bottom:0; }
 .formulas .eq > div { display:block; width:100%; } .formulas .eq .eq-title { white-space:nowrap; } .formulas .eq .eq-note { white-space:normal; }
 .formula-strip.bottom { padding:8px 10px; border-top:1px dashed #c9b88f; }
+/* A clicked CPB equation: everything it does not describe fades, so its flows and elements stand out */
+.react-flow.hl-on .react-flow__edge:not(.lit) { opacity:.12; transition:opacity .2s; }
+.react-flow.hl-on .react-flow__edge.lit { opacity:1; filter:drop-shadow(0 0 3px rgba(43,101,153,.45)); }
+.react-flow.hl-on .circuit .wires, .react-flow.hl-on .circuit .return-wires, .react-flow.hl-on .circuit .grounds, .react-flow.hl-on .circuit .u-signal, .react-flow.hl-on .circuit .d-input { opacity:.15; }
+.react-flow.hl-on .circuit .element:not(.selected) { opacity:.15; }
+.react-flow.hl-on .circuit .element.selected { opacity:1; }
+.react-flow.hl-on .map-node:not(.agent):not(.sub-group):not(.system-group):not(.anchor) { opacity:.35; }
