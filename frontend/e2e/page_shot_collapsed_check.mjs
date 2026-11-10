@@ -1,10 +1,11 @@
 // Page screenshot with the side panels collapsed (their tabs are grid columns). Usage: node e2e/page_shot_collapsed_check.mjs [outdir]
 import { chromium } from 'playwright-core';
+import { openPanels, pin } from './_lib.mjs';
 const out = process.argv[2] ?? 'e2e/shots';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1500, height: 1000 }, acceptDownloads: true });
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
-await page.goto('http://127.0.0.1:8001/'); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
+await page.goto('http://127.0.0.1:8001/'); await openPanels(page); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
 await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).click(); await page.waitForSelector('.year-slider', { timeout: 120000 });
 await page.getByRole('button', { name: 'Identify system' }).click(); await page.locator('.ident-line').waitFor({ timeout: 30000 });
 await page.getByRole('button', { name: 'Collapse scenario panel' }).click(); await page.waitForTimeout(1200);

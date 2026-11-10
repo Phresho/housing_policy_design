@@ -159,7 +159,7 @@ const LOOP_SIGNALS: Record<string, { label: string; title: string; signal: strin
   y_yoy: { label: 'Year-on-year', title: 'Output · year-on-year price change', signal: 'yoy', unit: '% a year', color: '#3f9a1f', dock: { kind: 'signal', id: 'y_yoy' } },
   y_reference: { label: 'Target r', title: 'Reference r · House price target', signal: 'I(Reference)', unit: 'Model units', color: '#2b6599', step: { kind: 'signal', id: 'y_reference' }, dock: { kind: 'signal', id: 'y_reference' } },
   y_error: { label: 'Gap e', title: 'Gap e · target minus price', signal: 'I(Error)', unit: 'Model units', color: '#1f2a26', step: { kind: 'signal', id: 'y_error' }, dock: { kind: 'signal', id: 'y_error' } },
-  x1: { label: 'Construction payments', title: 'State x₁ · Construction payments', signal: 'I(Construction_cost)', unit: 'Model units', color: '#e0782a', step: { kind: 'signal', id: 'y_price' }, dock: { kind: 'signal', id: 'y_price' } },
+  x1: { label: 'Construction payments', title: 'State x₁ · Construction payments', signal: 'I(Construction_cost)', unit: 'Model units', color: COLOR.money, step: { kind: 'signal', id: 'y_price' }, dock: { kind: 'signal', id: 'y_price' } },
   x2: { label: 'New construction', title: 'State x₂ · New construction', signal: 'I(Construction)', unit: '#/year', color: '#c98a1b', step: { kind: 'flow', id: 'houses' }, dock: { kind: 'flow', id: 'houses' } },
   y_price: { label: 'House price', title: 'Output y · House price', signal: 'I(Construction_cost)', unit: 'Model units', color: '#3f9a1f', step: { kind: 'signal', id: 'y_price' }, dock: { kind: 'signal', id: 'y_price' } },
 };
@@ -706,7 +706,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     }
     const xMark = view.system && (scenario.bank || (r1 && r2)) ? { markAt: 4, markDist: 22 + 95 * lab } : view.system ? { markDist: (sensor.x - R.cpb.x - R.cpb.w) / 2 } : {};
     lines.x1 = x1pts; lines.x2 = x2pts;
-    sig('x1', x1pts, { color: '#e0782a', letter: 'x₁', name: 'Construction payments', value: value('I(Construction_cost)'), markDist: 95 * lab, ...xMark, labelSide: 'above', selected: on({ kind: 'signal', id: 'y_price' }), pick: card('x1') ?? (() => select({ kind: 'signal', id: 'y_price' })), target: { kind: 'signal', id: 'y_price' } });
+    sig('x1', x1pts, { color: COLOR.money, letter: 'x₁', name: 'Construction payments', value: value('I(Construction_cost)'), markDist: 95 * lab, ...xMark, labelSide: 'above', selected: on({ kind: 'signal', id: 'y_price' }), pick: card('x1') ?? (() => select({ kind: 'signal', id: 'y_price' })), target: { kind: 'signal', id: 'y_price' } });
     sig('x2', x2pts, { color: COLOR.real, letter: 'x₂', name: 'New construction', value: value('I(Construction)'), markDist: 95 * lab, ...xMark, labelSide: 'below', selected: on({ kind: 'flow', id: 'houses' }), pick: card('x2') ?? (() => select({ kind: 'flow', id: 'houses' })), target: { kind: 'flow', id: 'houses' } });
     // y always leaves the sensor; the feedback branch is grey and dashed with the loop switch open.
     lines.y_price = [[sensor.x + sensor.w, gc], [sensor.x + sensor.w + 170 * lab, gc]];
@@ -818,7 +818,7 @@ const CLOSED: View = { system: false, cpb: false, finance: false, controller: fa
 type TfPicks = { input?: Pick; output?: Pick };
 type MenuState = { x: number; y: number; target: Selection; label: string };
 export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, update, design, setDesign, cbs, lag, left, cpb, tour }: { tour?: { n: number; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean; formulas?: boolean; reject?: string; robust?: boolean }; scenario: Scenario; result: Result | null; pinned: Result | null; busy: boolean; run: () => void; setFeedback: (on: boolean) => void; update: (patch: Partial<Scenario>) => void; design: Design; setDesign: (d: Design) => void; cbs?: CbsData; lag: number; left?: React.ReactNode; cpb?: { year: number[]; yoy: number[] } }) {
-  const [leftOpen, setLeftOpen] = useState(true);
+  const [leftOpen, setLeftOpen] = useState(false);  // side panels start closed (Jesse, 10 Nov 2026)
   const [map, setMap] = useState<MapData>();
   const [error, setError] = useState('');
   const [view, setViewState] = useState<View>(CLOSED);
@@ -827,7 +827,7 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
   const [index, setIndex] = useState<number>();
   const [tf, setTf] = useState<TfPicks>({});
   const [menuAt, setMenuAt] = useState<MenuState | null>(null);
-  const [dock, setDock] = useState(true);
+  const [dock, setDock] = useState(false);
   // Label size: block headers, signal names and the closed Parliament / Tax Authority / CBS blocks (for screenshots).
   const [lab, setLab] = useState(() => { try { const v = Number(localStorage.getItem('hpl.labelSize')); return v >= 1 && v <= 2.5 ? v : 1.3; } catch { return 1.3; } });
   useEffect(() => { try { localStorage.setItem('hpl.labelSize', String(lab)); } catch { /* storage blocked */ } }, [lab]);
@@ -860,7 +860,7 @@ export function ModelMap({ scenario, result, pinned, busy, run, setFeedback, upd
     if (!tour) return;
     // expand: the Housing Market fully open, every CPB agent showing its elements (the financial sector too when the bank is on).
     if (tour.reject) setStepInput(tour.reject);
-    setViewState(v => ({ ...(tour.formulas ? { system: true, cpb: true, finance: false, controller: false, agents: [], formulas: true } : tour.reject ? { ...CLOSED, controller: true } : tour.expand ? { system: true, cpb: true, finance: scenario.bank, controller: false, agents: scenario.bank ? [...CPB_AGENTS, 'bank'] : [...CPB_AGENTS] } : tour.tuning ? { ...CLOSED, controller: true } : CLOSED), noParliament: v.noParliament })); setSelection(tour.ident ? { kind: 'ident', id: '' } : tour.tuning || tour.reject ? { kind: 'agent', id: 'controller' } : tour.robust ? { kind: 'robust', id: '' } : NONE); if (tour.ident || tour.tuning || tour.reject || tour.robust) setDock(true); setCharts(tour.cbs ? [{ id: 'cbs', kind: 'cbs' }] : []); setSensed([]); setPinPos({}); setPins(tour.pins); setFocus(f => ({ id: tour.expand || tour.formulas ? 'system' : '', n: f.n + 1 }));
+    setViewState(v => ({ ...(tour.formulas ? { system: true, cpb: true, finance: false, controller: false, agents: [], formulas: true } : tour.reject ? { ...CLOSED, controller: true } : tour.expand ? { system: true, cpb: true, finance: scenario.bank, controller: false, agents: scenario.bank ? [...CPB_AGENTS, 'bank'] : [...CPB_AGENTS] } : tour.tuning ? { ...CLOSED, controller: true } : CLOSED), noParliament: v.noParliament })); setSelection(tour.ident ? { kind: 'ident', id: '' } : tour.tuning || tour.reject ? { kind: 'agent', id: 'controller' } : tour.robust ? { kind: 'robust', id: '' } : NONE); setCharts([]); setSensed([]); setPinPos({}); setPins([]);  // no plots open by themselves: the step sets up the analysis, the user opens it setFocus(f => ({ id: tour.expand || tour.formulas ? 'system' : '', n: f.n + 1 }));
   }, [tour?.n]);
   const [bodeFrom, setBodeFrom] = useState<Probe | null>(null);
   const ctx = useMemo<Ctx>(() => ({ K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, feedback: scenario.feedback, settling: design.settling, overshoot: design.overshoot }), [scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.feedback, design.settling, design.overshoot]);

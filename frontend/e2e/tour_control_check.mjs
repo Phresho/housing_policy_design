@@ -1,16 +1,18 @@
 // Tour steps 7-9: CBS card with the fitted set; PID tuning with the open loop for comparison (an arrow click reruns);
 // H-inf with the bank. Usage: node e2e/tour_control_check.mjs outdir
 import { chromium } from 'playwright-core';
+import { openPanels, pin } from './_lib.mjs';
 const out = process.argv[2] ?? 'e2e/shots';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 });
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
-await page.goto('http://127.0.0.1:8001/');
+await page.goto('http://127.0.0.1:8001/'); await openPanels(page);
 await page.getByRole('button', { name: 'Guided tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 });
 const go = async n => { await page.getByRole('button', { name: new RegExp(`^Step ${n}:`) }).click(); await page.locator('.tour-steps button.on', { hasText: String(n) }).waitFor({ timeout: 120000 }); await page.waitForTimeout(9000); };
 const info = {};
 await go(7); await page.locator('.map-body').screenshot({ path: out + '/step7.png', timeout: 30000 });
 await go(8); await page.locator('.map-body').screenshot({ path: out + '/step8.png', timeout: 30000 });
+await pin(page, ['u2', 'yout']); await page.waitForTimeout(1500);
 info.step8 = await page.locator('.pin-card small').allTextContents();
 const kp0 = await page.locator('.ctrl-box').first().textContent();
 await page.getByRole('button', { name: 'kp up 10%' }).first().click(); await page.waitForTimeout(10000);

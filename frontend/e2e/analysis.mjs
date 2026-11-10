@@ -1,12 +1,13 @@
 // New features: common returns, right-click transfer functions, pole design, robustness. Usage: node e2e/analysis.mjs [port]
 import { chromium } from 'playwright-core';
+import { openPanels } from './_lib.mjs';
 import { mkdirSync } from 'node:fs';
 const port = process.argv[2] ?? '8001', out = 'e2e/shots'; mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1500, height: 980 } });
 const errors = []; page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 const checks = []; const check = (name, ok) => { checks.push({ name, ok: !!ok }); console.log(ok ? 'PASS' : 'FAIL', name); };
-await page.goto(`http://127.0.0.1:${port}/`); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
+await page.goto(`http://127.0.0.1:${port}/`); await openPanels(page); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
 await page.getByRole('button', { name: /^Model$/ }).click(); await page.waitForTimeout(800);
 const open = async name => { await page.getByRole('button', { name: `Expand ${name}` }).dispatchEvent('click'); await page.waitForTimeout(900); };
 await open('Housing Market System'); await open('CPB housing model');

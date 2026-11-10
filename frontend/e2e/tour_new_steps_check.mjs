@@ -2,17 +2,18 @@
 // loop grey; switch the shock to the interest rate), step 10 (H-inf with robustness and Nyquist in the dock); right-click
 // Parliament removes it, the summing junction brings it back. Usage: node e2e/tour_new_steps_check.mjs outdir
 import { chromium } from 'playwright-core';
+import { openPanels, pin } from './_lib.mjs';
 const out = process.argv[2] ?? 'e2e/shots';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 });
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
-await page.goto('http://127.0.0.1:8001/');
+await page.goto('http://127.0.0.1:8001/'); await openPanels(page);
 await page.getByRole('button', { name: 'Guided tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 });
 const go = async n => { await page.getByRole('button', { name: new RegExp(`^Step ${n}:`) }).click(); await page.locator('.tour-steps button.on', { hasText: new RegExp(`^${n}$`) }).waitFor({ timeout: 120000 }); await page.waitForTimeout(6000); };
 const info = {};
 await go(6); info.step6 = { title: await page.locator('.tour-text strong').textContent(), cards: await page.locator('.pin-card').count() };
 await page.locator('.map-body').screenshot({ path: out + '/new_step6.png', timeout: 60000 });
-await go(9); await page.locator('.ghost-note').first().waitFor({ timeout: 60000 });
+await go(9); await pin(page, ['yout', 'u2']); await page.locator('.ghost-note').first().waitFor({ timeout: 60000 });
 info.step9 = { notes: await page.locator('.pin-card small').allTextContents(), select: await page.locator('.step-pick select').inputValue() };
 await page.locator('.step-pick select').selectOption('d_interest'); await page.waitForTimeout(3000);
 info.step9interest = await page.locator('.pin-card small').allTextContents();

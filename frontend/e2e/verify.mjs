@@ -1,12 +1,13 @@
 // Drives the built app in headless Chrome against a temporary database. Usage: node e2e/verify.mjs [port]
 import { chromium } from 'playwright-core';
+import { openPanels } from './_lib.mjs';
 import { mkdirSync } from 'node:fs';
 const port = process.argv[2] ?? '8011', out = 'e2e/shots'; mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
 const errors = []; page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 const checks = []; const check = (name, ok) => { checks.push({ name, ok: !!ok }); console.log(ok ? 'PASS' : 'FAIL', name); };
-await page.goto(`http://127.0.0.1:${port}/`); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
+await page.goto(`http://127.0.0.1:${port}/`); await openPanels(page); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
 check('starts with feedback off', await page.getByText('Feedback off').first().isVisible());
 await page.screenshot({ path: `${out}/1_scenario.png`, fullPage: true });
 await page.getByRole('button', { name: /Next/ }).click();

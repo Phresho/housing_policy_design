@@ -1,11 +1,12 @@
 // Outside the tour: open the market, pin a flow, drag its card away; a dashed link runs from the nearest point of the
 // line to the card's edge. Usage: node e2e/card_lead_check.mjs outdir
 import { chromium } from 'playwright-core';
+import { openPanels, pin } from './_lib.mjs';
 const out = process.argv[2] ?? 'e2e/shots';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 });
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
-await page.goto('http://127.0.0.1:8001/');
+await page.goto('http://127.0.0.1:8001/'); await openPanels(page);
 const run = page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }); await run.waitFor();
 await run.click(); await page.waitForSelector('.year-slider', { timeout: 300000 }); await page.waitForTimeout(2000);
 await page.locator('.react-flow__node[data-id="system"]').click({ position: { x: 20, y: 40 } }); await page.waitForTimeout(2500);

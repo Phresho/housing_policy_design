@@ -1,11 +1,12 @@
 // CPB backbone view: Budget and the subsidy formula light both subsidy arrows (rental drawn even when switched off) and
 // the subsidy sources. Usage: node e2e/subsidy_glow_check.mjs outdir
 import { chromium } from 'playwright-core';
+import { openPanels, pin } from './_lib.mjs';
 const out = process.argv[2] ?? 'e2e/shots';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 });
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
-await page.goto('http://127.0.0.1:8001/');
+await page.goto('http://127.0.0.1:8001/'); await openPanels(page);
 await page.getByRole('button', { name: 'Guided tour' }).click(); await page.locator('.formulas .katex').first().waitFor({ timeout: 120000 }); await page.waitForTimeout(2500);
 await page.getByRole('button', { name: 'Expand Households' }).first().click(); await page.waitForTimeout(2000);
 await page.getByRole('button', { name: 'Whole model' }).click(); await page.waitForTimeout(1200);

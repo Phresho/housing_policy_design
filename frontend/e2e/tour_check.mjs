@@ -1,10 +1,12 @@
 // Guided tour: start it, step through all seven steps, screenshot the page at each. Usage: node e2e/tour_check.mjs outdir
 import { chromium } from 'playwright-core';
+import { openPanels, pin } from './_lib.mjs';
 const out = process.argv[2] ?? 'e2e/shots';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 });
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
 for (let i = 0; i < 40; i++) { try { await page.goto('http://127.0.0.1:8001/'); break; } catch { await page.waitForTimeout(500); } }
+await openPanels(page);
 await page.getByRole('button', { name: 'Guided tour' }).click();
 const steps = [];
 for (let i = 0; i < 10; i++) {

@@ -1,10 +1,11 @@
 // Read-only check: left scenario dock and the CBS card from the sensor. Usage: node e2e/left_check.mjs [port] [outdir]
 import { chromium } from 'playwright-core';
+import { openPanels } from './_lib.mjs';
 const port = process.argv[2] ?? '8001', out = process.argv[3] ?? 'e2e/shots';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
-await page.goto(`http://127.0.0.1:${port}/`); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
+await page.goto(`http://127.0.0.1:${port}/`); await openPanels(page); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
 await page.waitForTimeout(1000);
 console.log('left dock', await page.locator('.left-dock h3').textContent());
 await page.locator('.left-dock').getByRole('button', { name: 'Run simulation' }).click(); await page.waitForSelector('.year-slider', { timeout: 120000 }); await page.waitForTimeout(800);

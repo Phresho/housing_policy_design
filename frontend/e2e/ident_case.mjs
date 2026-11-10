@@ -1,10 +1,11 @@
 // Identification with a chosen target (adjustment, cycle) and screenshots of the step plot. Usage: node e2e/ident_case.mjs [adjust] [cycle] [outdir]
 import { chromium } from 'playwright-core';
+import { openPanels, pin } from './_lib.mjs';
 const adjust = process.argv[2] ?? '8', cycle = process.argv[3] ?? '7.5', out = process.argv[4] ?? 'e2e/shots';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
-await page.goto('http://127.0.0.1:8001/'); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
+await page.goto('http://127.0.0.1:8001/'); await openPanels(page); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor();
 await page.getByRole('button', { name: 'Identify system' }).click(); await page.locator('.ident-line').waitFor({ timeout: 30000 }); await page.waitForTimeout(1500);
 const nums = page.locator('.ident-form input[type=number]');
 await nums.first().fill(adjust); await page.locator('.ident-form input[type=checkbox]').check(); await nums.nth(1).fill(cycle);

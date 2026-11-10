@@ -1,10 +1,11 @@
 // Left column groups: fold/unfold, change dot, Reset all, model-parameter reset. Usage: node e2e/left_groups_check.mjs [port] [outdir]
 import { chromium } from 'playwright-core';
+import { openPanels } from './_lib.mjs';
 const port = process.argv[2] ?? '8001', out = process.argv[3] ?? 'e2e/shots';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1500, height: 1100 } });
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
-await page.goto(`http://127.0.0.1:${port}/`); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor(); await page.waitForTimeout(800);
+await page.goto(`http://127.0.0.1:${port}/`); await openPanels(page); await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).waitFor(); await page.waitForTimeout(800);
 const left = page.locator('.left-dock');
 const groups = await left.locator('.lgroup > summary .lg-title').allInnerTexts();
 await left.screenshot({ path: `${out}/left_closed.png` });

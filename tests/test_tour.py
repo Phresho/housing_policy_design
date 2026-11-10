@@ -54,3 +54,16 @@ def test_nyquist_margins():
     assert h["gm"]["ratio"] > 3 and h["pm"]["deg"] > 45 and h["ms"] < 2
     assert z["gm"]["ratio"] < 1.5 and z["pm"]["deg"] < 20 and z["ms"] > 5
     assert len(h["re"]) == len(h["im"]) == len(h["cycle_yr"])
+
+
+def test_gentle_w_keeps_part_of_the_first_dip():
+    """W crisis with crisis_w_floor: between the two dips the shock does not bounce back to 0; default unchanged."""
+    import re
+    def pwl(s):
+        line = next(l for l in sc.build(s) if l.startswith("V§Shock_financialcrisis"))
+        v = [float(x) for x in re.search(r"PWL\(([^)]*)\)", line).group(1).split()]
+        return list(zip(v[0::2], v[1::2]))
+    plain = pwl(Scenario(crisis_w=True))
+    assert dict(plain)[90.0] == 0.0  # full bounce back before the main dip (netlist delay 90 s)
+    gentle = dict(pwl(Scenario(crisis_w=True, crisis_w_floor=0.6, crisis_w_recovery_yr=2.5)))
+    assert gentle[90.0] < -10 and min(gentle.values()) == -50

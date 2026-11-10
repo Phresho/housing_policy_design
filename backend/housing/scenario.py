@@ -87,6 +87,10 @@ class Scenario(BaseModel):
     crisis_w_start_yr: float = Field(2008.0, ge=2000, le=2020)
     crisis_w_scale: float = Field(0.5, ge=0, le=2)
     crisis_w_on_yr: float = Field(1.0, ge=0, le=5)
+    # Gentler W (10 Nov 2026): recovery time after the first dip, and the share of the first dip's depth that stays
+    # until the second wave (0 = full bounce back, as before; the second wave then takes over from that level).
+    crisis_w_recovery_yr: float = Field(1.0, ge=0.2, le=6)
+    crisis_w_floor: float = Field(0.0, ge=0, le=0.95)
     covid_scale: float = Field(1.0, ge=0, le=2)
     covid_on_yr: float = Field(2.5, ge=0.1, le=5)     # Covid shock fully on (netlist 15 s = 2.5 yr)
     covid_fall_yr: float = Field(50 / 6, ge=0.1, le=10)  # and its fade-out (netlist 50 s = 8.3 yr)
@@ -174,6 +178,21 @@ def subsidy_points(s: Scenario) -> list[tuple[float, float]]:
     return pts + [(end, level)]
 
 
+def w_pulses(s: Scenario, main_delay: float, w_delay: float, main_amp: float, main_shape: tuple[float, float, float]) -> list[tuple]:
+    """Trapezoids (delay, amp, rise, fall, on) of a W-shaped crisis: the main dip, the earlier first dip and, with
+    crisis_w_floor > 0, a bridge that keeps that share of the first dip's depth until the main dip has fully set in
+    (the bridge fades over the main dip's rise, so the two hand over smoothly)."""
+    yr = SECONDS_PER_YEAR
+    rise, fall, on = main_shape
+    w_amp = main_amp * s.crisis_w_scale
+    pulses = [(main_delay, main_amp, rise, fall, on)]
+    floor = s.crisis_w_floor if w_delay + yr < main_delay else 0.0
+    pulses.append((w_delay, w_amp * (1 - floor), yr, s.crisis_w_recovery_yr * yr, s.crisis_w_on_yr * yr))
+    if floor > 0:
+        pulses.append((w_delay, w_amp * floor, yr, rise, max(0.0, main_delay - w_delay - yr)))
+    return pulses
+
+
 def build(s: Scenario, b4: Literal["linear", "nonlinear", "original"] = "linear", u_start: float | None = None) -> list[str]:
     """b4: 'linear' (the site: gain -10, linearised), 'nonlinear' (gain -10), 'original' (the netlist's -1).
     u_start: equilibrium subsidy for the equilibrium start (feedback with equilibrium_start); None: soft start."""
@@ -207,11 +226,9 @@ def build(s: Scenario, b4: Literal["linear", "nonlinear", "original"] = "linear"
     crisis_delay = round((s.crisis_start_yr - YEAR_AT_RAW_ZERO) * SECONDS_PER_YEAR, 6)
     if s.crisis_w:
         w_delay = round((s.crisis_w_start_yr - YEAR_AT_RAW_ZERO) * SECONDS_PER_YEAR, 6)
-        nl.set_crisis_pwl(lines, [(crisis_delay, -50 * s.crisis_scale, 10, 20, 35),
-                                  (w_delay, -50 * s.crisis_scale * s.crisis_w_scale, SECONDS_PER_YEAR, SECONDS_PER_YEAR, s.crisis_w_on_yr * SECONDS_PER_YEAR)])
+        nl.set_crisis_pwl(lines, w_pulses(s, crisis_delay, w_delay, -50 * s.crisis_scale, (10, 20, 35)))
         if s.bank:
-            nl.set_loans_pwl(lines, [(crisis_delay, -20.0, 3.0, 10.0, 30.0),
-                                     (w_delay, -20.0 * s.crisis_w_scale, SECONDS_PER_YEAR, SECONDS_PER_YEAR, s.crisis_w_on_yr * SECONDS_PER_YEAR)])
+            nl.set_loans_pwl(lines, w_pulses(s, crisis_delay, w_delay, -20.0, (3.0, 10.0, 30.0)))
     else:
         nl.set_crisis_start(lines, crisis_delay)
         nl.set_pulse_amplitude(lines, "V§Shock_financialcrisis ", "PULSE(00 -50", s.crisis_scale)

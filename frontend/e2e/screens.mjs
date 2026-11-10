@@ -1,6 +1,7 @@
 // High-resolution screenshots for the presentation (3x pixel density), each cropped to the drawing.
 // Read-only: no saves. Usage: node e2e/screens.mjs [port] [outdir]
 import { chromium } from 'playwright-core';
+import { openPanels } from './_lib.mjs';
 const port = process.argv[2] ?? '8001', out = process.argv[3] ?? 'e2e/shots';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1700, height: 1050 }, deviceScaleFactor: 3 });
@@ -12,7 +13,7 @@ const whole = async () => { await page.getByRole('button', { name: /Whole model/
 const run = async () => { await page.locator('.action-bar').getByRole('button', { name: 'Run simulation' }).click(); await page.waitForSelector('.year-slider', { timeout: 120000 }); await wait(1500); await page.evaluate(() => window.scrollTo(0, 0)); await wait(300); };
 // Fresh page for every shot, scenario dock collapsed, zoom buttons and legend hidden.
 const fresh = async () => {
-  await page.goto(`http://127.0.0.1:${port}/`); await page.waitForSelector('.react-flow__node', { timeout: 60000 });
+  await page.goto(`http://127.0.0.1:${port}/`); await openPanels(page); await page.waitForSelector('.react-flow__node', { timeout: 60000 });
   await page.addStyleTag({ content: '.react-flow__controls, .map-key { display:none !important; }' });
   await page.getByRole('button', { name: 'Collapse scenario panel' }).click(); await wait(300);
 };
