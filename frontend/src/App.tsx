@@ -84,7 +84,9 @@ export default function App() {
     if (!catalogue) return;
     // keepGains: the controller the user tuned in the previous step carries over
     const keep = TOUR[i].keepGains && s?.feedback ? { controller: s.controller, kp: s.kp, ki: s.ki, kd: s.kd, derivative_filter: s.derivative_filter } : {};
-    const next = { ...catalogue.defaults, name: `Tour ${i + 1}: ${TOUR[i].title}`, ...TOUR[i].patch, ...keep } as Scenario;
+    // carry: coming straight from the previous step, keep its settings as they are now and add only this step's change
+    const fromPrev = TOUR[i].carry && tour?.step === i - 1 && s;
+    const next = (fromPrev ? { ...s, ...TOUR[i].carry, name: `Tour ${i + 1}: ${TOUR[i].title}` } : { ...catalogue.defaults, name: `Tour ${i + 1}: ${TOUR[i].title}`, ...TOUR[i].patch, ...keep }) as Scenario;
     if (TOUR[i].cbs) setLag(null);
     if (TOUR[i].cpbOverlay) { setShowCpb(true); setCpbScale(1); setCpbShift(0); }
     setS(next);
