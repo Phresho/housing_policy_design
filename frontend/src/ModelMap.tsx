@@ -674,7 +674,21 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     // run up into the lane under the frame header, along it, down the right margin and out to CBS. x1 starts left of
     // x2 and runs outside it, so the two never cross.
     let x1pts: Point[] = [[group.x + group.w, gc + xIn.a], [sensor.x, gc + xIn.a]], x2pts: Point[] = [[group.x + group.w, gc + xIn.b], [sensor.x, gc + xIn.b]];
-    if (view.system && !scenario.bank) {
+    // CPB open: both lines start on the real flows (the construction-cost and houses rails between Constructors and
+    // Investors), rise into the lane under the frame header, run along it and down the right margin to CBS.
+    // x2 starts right of x1 and turns below it, so the two never cross (x2 crosses the construction-cost rail once).
+    const onRail = (flow: string): Point | null => {
+      const pts = lines[flow]; if (!pts || pts.length < 2) return null;
+      let best: [Point, Point] | null = null, bl = 0;
+      for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i]; if (Math.abs(a[1] - b[1]) < 1e-6 && Math.abs(b[0] - a[0]) > bl) { bl = Math.abs(b[0] - a[0]); best = [a, b]; } }
+      return best ? [(best[0][0] + best[1][0]) / 2, best[0][1]] : null;
+    };
+    const r1 = view.system && view.cpb ? onRail('construction_cost') : null, r2 = view.system && view.cpb ? onRail('houses') : null;
+    if (r1 && r2) {
+      const b1 = group.y + HEAD_FLOW * lab + 26, b2 = b1 + 22, vx1 = group.x + group.w - 22, vx2 = vx1 - 22, sx1 = r1[0] - 18, sx2 = r1[0] + 18;
+      x1pts = [[sx1, r1[1]], [sx1, b1], [vx1, b1], [vx1, gc + xIn.a], [sensor.x, gc + xIn.a]];
+      x2pts = [[sx2, r2[1]], [sx2, b2], [vx2, b2], [vx2, gc + xIn.b], [sensor.x, gc + xIn.b]];
+    } else if (view.system && !scenario.bank) {
       // No financial sector to the right: straight out of the right side of the CPB box.
       x1pts = [[R.cpb.x + R.cpb.w, gc + xIn.a], [sensor.x, gc + xIn.a]]; x2pts = [[R.cpb.x + R.cpb.w, gc + xIn.b], [sensor.x, gc + xIn.b]];
     } else if (view.system) {
@@ -683,7 +697,7 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       x1pts = [[sx1, src.y], [sx1, b1], [vx1, b1], [vx1, gc + xIn.a], [sensor.x, gc + xIn.a]];
       x2pts = [[sx2, src.y], [sx2, b2], [vx2, b2], [vx2, gc + xIn.b], [sensor.x, gc + xIn.b]];
     }
-    const xMark = view.system && scenario.bank ? { markAt: 4, markDist: 22 + 95 * lab } : view.system ? { markDist: (sensor.x - R.cpb.x - R.cpb.w) / 2 } : {};
+    const xMark = view.system && (scenario.bank || (r1 && r2)) ? { markAt: 4, markDist: 22 + 95 * lab } : view.system ? { markDist: (sensor.x - R.cpb.x - R.cpb.w) / 2 } : {};
     lines.x1 = x1pts; lines.x2 = x2pts;
     sig('x1', x1pts, { color: '#e0782a', letter: 'x₁', name: 'Construction payments', value: value('I(Construction_cost)'), markDist: 95 * lab, ...xMark, labelSide: 'above', selected: on({ kind: 'signal', id: 'y_price' }), pick: card('x1') ?? (() => select({ kind: 'signal', id: 'y_price' })), target: { kind: 'signal', id: 'y_price' } });
     sig('x2', x2pts, { color: COLOR.real, letter: 'x₂', name: 'New construction', value: value('I(Construction)'), markDist: 95 * lab, ...xMark, labelSide: 'below', selected: on({ kind: 'flow', id: 'houses' }), pick: card('x2') ?? (() => select({ kind: 'flow', id: 'houses' })), target: { kind: 'flow', id: 'houses' } });
