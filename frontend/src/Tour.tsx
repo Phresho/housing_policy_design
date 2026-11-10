@@ -17,15 +17,18 @@ export const FITTED_CBS: Partial<Scenario> = { mortgage_scale: 4.86, mortgage_sh
 // 131.9 in 1996, flat in real terms, -0.02% a year rounded to 0), so both controllers keep the historical path and only damp its cycles. Claude's
 // fit, 10 Nov 2026; the nominal growth on the year-on-year card adds the fitted inflation (4.47%).
 export const TREND_TARGET: Partial<Scenario> = { reference_base: 131.9, target_growth_pct: 0 };
-// Slide preset (11 Nov 2026, also in tour steps 7-10 for the slides): the fitted set with a clearly W-shaped crisis shock (first dip 2008, partly back by 2010,
+// Slide W (11 Nov 2026, for the presentation of 12 Nov): DRAWN ONLY. Tour steps 7-10 and the 'W crisis (slide)' preset
+// simulate the fitted set (slow first dip); the two crisis-shock cards show the shock of a second run with these
+// settings, so the card has a clear W while every other plot comes from the fitted run. To be replaced by a fitted W.
+// Originally: the fitted set with a clearly W-shaped crisis shock (first dip 2008, partly back by 2010,
 // then the deeper main dip). Hand-picked for the slides, not fitted: the fitted preset's slow first dip fits CBS better.
-export const W_SLIDE: Partial<Scenario> = { crisis_w: true, crisis_w_start_yr: 2008, crisis_w_fall_yr: 1, crisis_w_scale: 0.8, crisis_w_on_yr: 0.5, crisis_w_recovery_yr: 0.8, crisis_w_floor: 0.4, crisis_scale: 2, crisis_start_yr: 2011.1 };
+export const W_SLIDE: Partial<Scenario> = { crisis_w: true, crisis_w_start_yr: 2007.8, crisis_w_fall_yr: 0.8, crisis_w_scale: 1, crisis_w_on_yr: 0.8, crisis_w_recovery_yr: 0.8, crisis_w_floor: 0, crisis_scale: 2, crisis_start_yr: 2011.1 };
 // Stable growth path: income starts at 80 (the historical start 259.056 scaled) and grows 2% a year (Jesse, 10 Nov 2026).
 const INCOME_START = 80;
 const GROWTH: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 2, income_scale: INCOME_START / 259.056 };
 const FLAT: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 0, income_scale: 1 };
 const STEP: Partial<Scenario> = { subsidy_path: 'step', subsidy_base: 0, subsidy_step: 20, subsidy_step_yr: 2005 };
-export type TourStep = { title: string; text: string; patch: Partial<Scenario>; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean; formulas?: boolean; reject?: string; robust?: boolean; keepGains?: boolean; cpbOverlay?: boolean; carry?: Partial<Scenario> };
+export type TourStep = { title: string; text: string; patch: Partial<Scenario>; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean; formulas?: boolean; reject?: string; robust?: boolean; keepGains?: boolean; cpbOverlay?: boolean; slideW?: boolean; carry?: Partial<Scenario> };
 const price: Probe = { flow: 'y_price', q: 's' }, subsidy: Probe = { flow: 'owner_subsidy', q: 's' }, income: Probe = { flow: 'd_income', q: 's' }, yoy: Probe = { flow: 'y_yoy', q: 's' };
 export const TOUR: TourStep[] = [
   { title: 'The backbone: the CPB model', text: 'The circuit is built on the CPB housing-market model (Groot & Möhlmann, 2020): the four quadrants of DiPasquale and Wheaton. Each agent carries its CPB equations (numbers refer to the CPB document): click one to light up the flows and elements it describes. Open an agent with + to see its elements; the equations stay above them. No shocks, no subsidy, constant income, no bank: nothing pushes the market, so the price stays where it is.',
@@ -41,13 +44,13 @@ export const TOUR: TourStep[] = [
   { title: 'Historical subsidies: the CPB path', text: 'The CPB model’s own historical path (the “CPB fit (peaks)” preset): historical subsidies ×10, income at a tenth growing 5% a year, so the model’s two peaks line up with the CPB’s (click CBS for the year-on-year card, CPB green dashed). Claude’s fit.',
     patch: { ...QUIET, ...CPB_PEAKS }, pins: [subsidy, price], cbs: true, cpbOverlay: true },
   { title: 'Bank and disturbances: the real path', text: 'Now the banking sector and all historical inputs and shocks (crisis, Covid, interest, mortgages, income), fitted to CBS. Click CBS to compare the model’s year-on-year change with the CBS index.',
-    patch: { ...FITTED_CBS, ...W_SLIDE }, pins: [price], cbs: true },
+    patch: { ...FITTED_CBS }, pins: [price], slideW: true, cbs: true },
   { title: 'PID control, tuned by hand', text: 'Same historical set, loop closed with the Ziegler–Nichols PID. Its target is the trend of the fitted path (flat in real terms; on the year-on-year card that is the fitted 4.5% inflation), so the controller keeps the historical path and only damps the cycles. Use the arrows on P, I and D in the Tax Authority, or the pole plot in the side panel (right); each change runs at once. Click a line to plot it; grey dashed: the open loop with the historical subsidies.',
-    patch: { ...FITTED_CBS, ...W_SLIDE, ...TREND_TARGET, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [subsidy, yoy], tuning: true, compare: true },
+    patch: { ...FITTED_CBS, ...TREND_TARGET, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [subsidy, yoy], slideW: true, tuning: true, compare: true },
   { title: 'Disturbance rejection', text: 'The PID from the previous step (its gains carry over), hit by one unit shock: the financial crisis by default; pick another shock, such as the interest rate, in the side panel (right). Click the price or the subsidy to plot its step response with the controller; grey dashed: the same shock without it. Linear model, loop closed.',
-    patch: { ...FITTED_CBS, ...W_SLIDE, ...TREND_TARGET, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [price, subsidy], reject: 'd_crisis', keepGains: true },
+    patch: { ...FITTED_CBS, ...TREND_TARGET, feedback: true, controller: 'zn', equilibrium_start: true }, pins: [price, subsidy], slideW: true, reject: 'd_crisis', keepGains: true },
   { title: 'H∞ control', text: 'Same historical set with the bank, now the robust H∞ PID. Click a line to plot it (grey dashed: the open loop with the historical subsidies; the “⋯ Ziegler–Nichols PID” button in the toolbar adds the fast PID, light green dotted). The side panel (right): robustness (S, T, KS against their limits, random markets) and the Nyquist plot with gain and phase margin.',
-    patch: { ...FITTED_CBS, ...W_SLIDE, ...TREND_TARGET, feedback: true, controller: 'hinf', equilibrium_start: true }, pins: [subsidy, yoy, price], compare: true, robust: true },
+    patch: { ...FITTED_CBS, ...TREND_TARGET, feedback: true, controller: 'hinf', equilibrium_start: true }, pins: [subsidy, yoy, price], slideW: true, compare: true, robust: true },
 ];
 
 export function TourBar({ step, go, exit, busy }: { step: number; go: (i: number) => void; exit: () => void; busy: boolean }) {
