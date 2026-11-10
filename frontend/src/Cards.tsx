@@ -55,9 +55,9 @@ export function SensBody({ K, filtered, settling, overshoot, w = 268, h = 168, k
     <span><b style={{ color: COLORS[name] }}>{name}</b> {what} <em className={ev.limits[name] <= 1 ? 'ok' : 'bad'}>{ev.limits[name] <= 1 ? 'met' : 'missed'} ({ev.limits[name].toFixed(2)})</em></span>
     <CyclePlot x={ov.cycle_yr} w={w} h={Math.round(h / 3)} k={k} lines={[{ y: bound, color: '#E8642B', dash: true, width: 1.5 }, { y, color: COLORS[name] }]}/></div>;
   return <>
-    {row('S', ev.S, ov.WP.map(v => 1 / v), 'sensitivity · price shock left')}
-    {row('T', ev.T, ov.WT.map(v => 1 / v), 'complementary sensitivity · model error reaching the price')}
-    {row('KS', ev.KS, ev.KS.map(() => ov.ks_limit), 'control sensitivity · subsidy per price shock')}
+    {row('S', ev.S, ov.WP.map(v => 1 / v), 'sensitivity · how much of a price shock is left')}
+    {row('T', ev.T, ov.WT.map(v => 1 / v), 'complementary sensitivity · model errors that reach the price')}
+    {row('KS', ev.KS, ev.KS.map(() => ov.ks_limit), 'control sensitivity · subsidy spent per price shock')}
     <small>Dashed: the limit (thesis weights). Cycle length in years, long cycles left.</small>
   </>;
 }
@@ -75,7 +75,7 @@ export function YoyBody({ year, model, cbs, lag, cpb, w = 356, h = 150, k = 1, g
     {cbs && cy.map((t, i) => t >= x0 && t <= x1 && <rect key={i} x={sx(t) - bw * .4} width={bw * .8} y={Math.min(sy(0), sy(cbs.yoy[i]))} height={Math.abs(sy(cbs.yoy[i]) - sy(0))} fill="#c4c9c6"/>)}
     {cpb && <polyline fill="none" stroke="#3f9a1f" strokeWidth={2.6 * k} strokeDasharray={`${8 * k} ${5 * k}`} points={cpb.year.flatMap((t, i) => [`${sx(t)},${sy(cpb.yoy[i])}`, `${sx(t + 1)},${sy(cpb.yoy[i])}`]).join(' ')}/>}
     {ghost && year && ghost.length === year.length && <polyline fill="none" stroke="#8a9692" strokeWidth={2.6 * k} strokeDasharray={`${7 * k} ${4 * k}`} points={year.map((t, i) => `${sx(t)},${sy(ghost[i])}`).join(' ')}/>}
-    {ghost2 && year && ghost2.length === year.length && <polyline fill="none" stroke="#4a5550" strokeWidth={2.4 * k} strokeDasharray={`${1.5 * k} ${3.5 * k}`} strokeLinecap="round" points={year.map((t, i) => `${sx(t)},${sy(ghost2[i])}`).join(' ')}/>}
+    {ghost2 && year && ghost2.length === year.length && <polyline fill="none" stroke="#7cc96a" strokeWidth={2.8 * k} strokeDasharray={`${1.5 * k} ${3.5 * k}`} strokeLinecap="round" points={year.map((t, i) => `${sx(t)},${sy(ghost2[i])}`).join(' ')}/>}
     {model && year && <polyline fill="none" stroke={color} strokeWidth={3 * k} strokeLinejoin="round" points={year.map((t, i) => `${sx(t)},${sy(model[i])}`).join(' ')}/>}
   </svg>;
 }
