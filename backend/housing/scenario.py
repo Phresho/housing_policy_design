@@ -91,6 +91,9 @@ class Scenario(BaseModel):
     # until the second wave (0 = full bounce back, as before; the second wave then takes over from that level).
     crisis_w_recovery_yr: float = Field(1.0, ge=0.2, le=6)
     crisis_w_floor: float = Field(0.0, ge=0, le=0.95)
+    # Time for the first dip to reach full depth (11 Nov 2026; 1 = as before). A slow fall excites the market's own
+    # cycle less, so the price does not bounce back as hard after the 2009 dip (Jesse's suggestion).
+    crisis_w_fall_yr: float = Field(1.0, ge=0.2, le=6)
     covid_scale: float = Field(1.0, ge=0, le=2)
     covid_on_yr: float = Field(2.5, ge=0.1, le=5)     # Covid shock fully on (netlist 15 s = 2.5 yr)
     covid_fall_yr: float = Field(50 / 6, ge=0.1, le=10)  # and its fade-out (netlist 50 s = 8.3 yr)
@@ -186,10 +189,11 @@ def w_pulses(s: Scenario, main_delay: float, w_delay: float, main_amp: float, ma
     rise, fall, on = main_shape
     w_amp = main_amp * s.crisis_w_scale
     pulses = [(main_delay, main_amp, rise, fall, on)]
-    floor = s.crisis_w_floor if w_delay + yr < main_delay else 0.0
-    pulses.append((w_delay, w_amp * (1 - floor), yr, s.crisis_w_recovery_yr * yr, s.crisis_w_on_yr * yr))
+    down = s.crisis_w_fall_yr * yr
+    floor = s.crisis_w_floor if w_delay + down < main_delay else 0.0
+    pulses.append((w_delay, w_amp * (1 - floor), down, s.crisis_w_recovery_yr * yr, s.crisis_w_on_yr * yr))
     if floor > 0:
-        pulses.append((w_delay, w_amp * floor, yr, rise, max(0.0, main_delay - w_delay - yr)))
+        pulses.append((w_delay, w_amp * floor, down, rise, max(0.0, main_delay - w_delay - down)))
     return pulses
 
 
