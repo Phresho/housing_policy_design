@@ -9,7 +9,7 @@ const errors = []; page.on('pageerror', e => errors.push(String(e)));
 await page.goto('http://127.0.0.1:8001/'); await openPanels(page);
 const state = () => page.evaluate(() => ({ hidden: [...document.querySelectorAll('.react-flow__node')].filter(n => getComputedStyle(n).visibility === 'hidden').length,
   nodes: document.querySelectorAll('.react-flow__node').length, edges: document.querySelectorAll('.react-flow__edge path').length, year: document.querySelector('.year-slider output')?.textContent }));
-await page.getByRole('button', { name: 'Guided tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 }); await page.waitForTimeout(1500);
+await page.getByRole('button', { name: 'Presenter tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 }); await page.waitForTimeout(1500);
 await page.getByRole('button', { name: /^Step 2:/ }).click(); await page.locator('.tour-steps button.on', { hasText: '2' }).waitFor({ timeout: 120000 }); await page.waitForTimeout(500);
 await page.getByRole('button', { name: 'Expand Tax Authority' }).click();
 const log = [];

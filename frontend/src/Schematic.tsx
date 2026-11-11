@@ -193,7 +193,7 @@ export function ControllerCircuit({ map, scenario, selection, pick, step }: { ma
   const [part, setPart] = useState<Part | null>(null);
   if (part) return <PartBreadboard part={part} K={[scenario.kp, scenario.ki, scenario.kd]} filtered={scenario.derivative_filter} close={() => setPart(null)}/>;
   const stepper = (x: number, y: number, k: GainKey, s = 1) => step && <g className="gain-arrows">
-    {([[true, -1], [false, 1]] as const).map(([up, d]) => <g key={String(up)} role="button" tabIndex={0} aria-label={`${k} ${up ? 'up' : 'down'} 10%`} onClick={ev => { ev.stopPropagation(); step(k, up); pick({ kind: 'agent', id: 'controller' }); }}>
+    {([[true, -1], [false, 1]] as const).map(([up, d]) => <g key={String(up)} role="button" tabIndex={0} aria-label={`${k} ${up ? 'up' : 'down'}`} onClick={ev => { ev.stopPropagation(); step(k, up); pick({ kind: 'agent', id: 'controller' }); }}>
       <rect x={x} y={y + (d < 0 ? -36 : 2) * s} width={34 * s} height={34 * s} rx={5}/><path d={up ? `M${x + 7 * s} ${y - 10 * s}L${x + 17 * s} ${y - 26 * s}L${x + 27 * s} ${y - 10 * s}Z` : `M${x + 7 * s} ${y + 12 * s}L${x + 17 * s} ${y + 28 * s}L${x + 27 * s} ${y + 12 * s}Z`}/></g>)}</g>;
   const zoom = (x: number, y: number, p: Part) => <g className="part-zoom" role="button" tabIndex={0} aria-label={`Open the ${p} breadboard`} onClick={ev => { ev.stopPropagation(); setPart(p); }}><rect x={x} y={y} width={30} height={30} rx={5}/><path d={`M${x + 8} ${y + 15}L${x + 22} ${y + 15}M${x + 15} ${y + 8}L${x + 15} ${y + 22}`}/></g>;
   const [w, h] = CONTROLLER_SIZE, closed = scenario.feedback, el = (name: string) => map.elements.find(e => e.name === name);

@@ -16,7 +16,7 @@ console.log('cards', await page.locator('.pin-card').count(), await page.locator
 await page.locator('.react-flow__node[data-id="controller"]').dispatchEvent('click'); await page.waitForTimeout(3000);
 console.log('step mode', await page.locator('.pin-card.step-mode').count(), (await page.locator('.pin-card small').allTextContents()).join(' | '));
 await page.screenshot({ path: `${out}/st_1.png` });
-for (let i = 0; i < 5; i++) { await page.getByRole('button', { name: 'Kp up 10%' }).first().click(); await page.waitForTimeout(100); }
+for (let i = 0; i < 5; i++) { await page.getByRole('button', { name: 'Kp up' }).first().click(); await page.waitForTimeout(100); }
 await page.waitForTimeout(2000);
 console.log('after Kp up', (await page.locator('.pin-card small').allTextContents()).join(' | '));
 await page.getByRole('button', { name: /Whole model/ }).click(); await page.waitForTimeout(1000); const cb = await page.locator('.pin-card').first().boundingBox(); await page.mouse.move(cb.x + 40, cb.y + 40); for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, -250); await page.waitForTimeout(150); } await page.waitForTimeout(600); await page.screenshot({ path: `${out}/st_2.png` });

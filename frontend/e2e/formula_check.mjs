@@ -7,7 +7,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 });
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
 await page.goto('http://127.0.0.1:8001/'); await openPanels(page);
-await page.getByRole('button', { name: 'Guided tour' }).click(); await page.locator('.formulas .katex').first().waitFor({ timeout: 120000 }); await page.waitForTimeout(3000);
+await page.getByRole('button', { name: 'Presenter tour' }).click(); await page.locator('.formulas .katex').first().waitFor({ timeout: 120000 }); await page.waitForTimeout(3000);
 const info = { cards: await page.locator('.formulas .eq').count(), katex: await page.locator('.formulas .katex').count(), steps: await page.locator('.tour-steps button').count() };
 await page.locator('.formulas .eq', { hasText: 'Budget' }).click(); await page.waitForTimeout(800);
 info.litRails = await page.locator('.react-flow__edge.selected, .rail.selected, .react-flow__edge [class*="selected"]').count();

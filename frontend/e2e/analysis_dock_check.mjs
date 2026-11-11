@@ -8,7 +8,7 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, de
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
 for (let i = 0; i < 40; i++) { try { await page.goto('http://127.0.0.1:8001/'); break; } catch { await page.waitForTimeout(500); } }
 await openPanels(page);
-await page.getByRole('button', { name: 'Guided tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 }); await page.waitForTimeout(4000);
+await page.getByRole('button', { name: 'Presenter tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 }); await page.waitForTimeout(4000);
 const info = { playingAfterRun: await page.getByRole('button', { name: 'Pause' }).count(), year: await page.locator('.year-slider output').textContent(), eqs: await page.locator('.formulas .eq').count() };
 await page.locator('.map-canvas').screenshot({ path: out + '/step1_formulas.png', timeout: 60000 });
 await page.getByRole('button', { name: 'Leave tour' }).click();

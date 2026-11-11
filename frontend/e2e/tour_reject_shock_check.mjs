@@ -7,7 +7,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 });
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
 await page.goto('http://127.0.0.1:8001/'); await openPanels(page);
-await page.getByRole('button', { name: 'Guided tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 });
+await page.getByRole('button', { name: 'Presenter tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 });
 const go = async n => { await page.getByRole('button', { name: new RegExp(`^Step ${n}:`) }).click(); await page.locator('.tour-steps button.on', { hasText: new RegExp(`^${n}$`) }).waitFor({ timeout: 120000 }); await page.waitForTimeout(6000); };
 const info = {};
 await go(9); await pin(page, ['yout', 'shocks']); await page.waitForTimeout(4000);

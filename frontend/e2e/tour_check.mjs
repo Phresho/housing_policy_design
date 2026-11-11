@@ -7,7 +7,7 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, de
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
 for (let i = 0; i < 40; i++) { try { await page.goto('http://127.0.0.1:8001/'); break; } catch { await page.waitForTimeout(500); } }
 await openPanels(page);
-await page.getByRole('button', { name: 'Guided tour' }).click();
+await page.getByRole('button', { name: 'Presenter tour' }).click();
 const steps = [];
 for (let i = 0; i < 10; i++) {
   if (i) await page.getByRole('button', { name: /Next/ }).click();

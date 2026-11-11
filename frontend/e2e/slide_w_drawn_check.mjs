@@ -7,7 +7,7 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, de
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
 const runs = []; page.on('request', r => { if (r.url().endsWith('/api/runs') && r.method() === 'POST') { const b = JSON.parse(r.postData()); runs.push([b.crisis_w_fall_yr, b.crisis_w_start_yr]); } });
 await page.goto('http://127.0.0.1:8001/'); await openPanels(page);
-await page.getByRole('button', { name: 'Guided tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 });
+await page.getByRole('button', { name: 'Presenter tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 });
 await page.getByRole('button', { name: /^Step 7:/ }).click(); await page.locator('.tour-steps button.on', { hasText: /^7$/ }).waitFor({ timeout: 120000 }); await page.waitForTimeout(9000);
 await page.locator('.react-flow__node[data-id="system"] button').first().dispatchEvent('click'); await page.waitForTimeout(1500);
 await page.locator('.react-flow__controls-fitview').click(); await page.waitForTimeout(1500);

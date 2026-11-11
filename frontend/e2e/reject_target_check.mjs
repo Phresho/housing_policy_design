@@ -5,7 +5,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
 await page.goto('http://127.0.0.1:8001/'); await openPanels(page);
-await page.getByRole('button', { name: 'Guided tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 });
+await page.getByRole('button', { name: 'Presenter tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 });
 await page.getByRole('button', { name: /^Step 9:/ }).click(); await page.locator('.tour-steps button.on', { hasText: /^9$/ }).waitFor({ timeout: 120000 }); await page.waitForTimeout(6000);
 await pin(page, ['yout', 'u2']); await page.waitForTimeout(2000);
 await page.locator('.step-pick select').selectOption('y_reference'); await page.waitForTimeout(5000);

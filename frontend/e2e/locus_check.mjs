@@ -11,7 +11,7 @@ await page.locator('.react-flow__node[data-id="controller"]').click(); await pag
 const verdict = async () => page.locator('.dock-locus .verdict').textContent();
 console.log('verdict', await verdict());
 await page.screenshot({ path: `${out}/l_1.png` });
-for (let i = 0; i < 8; i++) { await page.getByRole('button', { name: 'Kp up 10%' }).first().click(); await page.waitForTimeout(150); }
+for (let i = 0; i < 8; i++) { await page.getByRole('button', { name: 'Kp up' }).first().click(); await page.waitForTimeout(150); }
 await page.waitForTimeout(1500); console.log('Kp', await page.locator('.gain-step output').first().textContent(), 'verdict', await verdict());
 await page.locator('.dock-locus .chips button', { hasText: /Ziegler/ }).first().click(); await page.waitForTimeout(1500);
 console.log('ZN Kp', await page.locator('.gain-step output').first().textContent(), 'verdict', await verdict());

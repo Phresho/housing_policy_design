@@ -14,7 +14,7 @@ await sw.dispatchEvent('click'); await page.waitForTimeout(500);
 console.log('after click checked', await sw.getAttribute('aria-checked'), 'mode', await page.locator('.mode').textContent());
 await page.locator('.react-flow__node[data-id="controller"]').click(); await page.waitForTimeout(800);
 const before = await page.locator('.gain-step output').first().textContent();
-await page.getByRole('button', { name: 'Kp up 10%' }).click(); await page.waitForTimeout(300);
+await page.getByRole('button', { name: 'Kp up' }).click(); await page.waitForTimeout(300);
 console.log('Kp', before, '->', await page.locator('.gain-step output').first().textContent());
 await page.screenshot({ path: `${out}/fb_2_closed_steps.png` });
 await page.getByRole('button', { name: 'Collapse panel' }).click(); await page.waitForTimeout(400);

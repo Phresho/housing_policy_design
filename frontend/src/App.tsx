@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, ChevronRight, Download, FolderOpen, GitCompare, LoaderCircle, Pin, Play, RotateCcw, Save, X } from 'lucide-react';
 import { api } from './api';
 import { savePng } from './shot';
 import { Chart, type Line } from './Chart';
 import { ModelMap } from './ModelMap';
 import { CPB_PEAKS, FITTED_CBS, TOUR, TourBar, W_SLIDE } from './Tour';
+import { Coach, GUIDE, GuideBar, Welcome, clickTarget, type GState, type GuideCmd, type Snap } from './Guide';
 import { Robustness, type Design } from './Analysis';
 import type { Catalogue, ControllerKey, Kpis, Result, SavedRow, Scenario } from './types';
 
@@ -102,6 +103,58 @@ export default function App() {
     setPinned(open); setZnRun(znR); setResult(r); setS(r.scenario); setSlideW(!!TOUR[i].slideW); void shockFor(r.scenario, !!TOUR[i].slideW);
     setTour(t => ({ step: i, n: (t?.n ?? 0) + 1 }));
   });
+  // Guided tour (12 Nov 2026): the visitor clicks on the canvas; each step starts from its own scenario, and every
+  // change made on the canvas runs at once. Sub-steps move on when the canvas reports that the click has happened.
+  const [guide, setGuide] = useState<{ step: number; sub: number; n: number } | null>(null);
+  const [snap, setSnap] = useState<Snap | null>(null), [runs, setRuns] = useState(0), [gcmd, setGcmd] = useState<GuideCmd>({ n: 0 });
+  const [welcome, setWelcome] = useState(() => { try { return localStorage.getItem('hpl.welcome') !== 'seen'; } catch { return true; } });
+  const seen = () => { setWelcome(false); try { localStorage.setItem('hpl.welcome', 'seen'); } catch { /* storage blocked */ } };
+  useEffect(() => { if (result) setRuns(r => r + 1); }, [result]);
+  const goGuide = (i: number) => guard(async () => {
+    if (!catalogue) return;
+    const g = GUIDE[i], next = { ...catalogue.defaults, name: `Guided tour ${i + 1}: ${g.title}`, ...g.setup } as Scenario;
+    if (g.cbs) setLag(null);
+    setShowCpb(!!g.cpbOverlay); setCpbScale(1); setCpbShift(0); setTour(null); setSlideW(false); setShockRun(null);
+    setS(next);
+    const zn = catalogue.presets.zn;
+    const [r, open, znR] = await Promise.all([api<Result>('/runs', next), g.compareOpen ? api<Result>('/runs', { ...next, feedback: false }) : Promise.resolve(null),
+      g.zn && zn ? api<Result>('/runs', { ...next, controller: 'zn', kp: zn.kp, ki: zn.ki, kd: zn.kd, derivative_filter: zn.filtered }) : Promise.resolve(null)]);
+    setPinned(open); setZnRun(znR); setResult(r); setS(r.scenario);
+    setGuide(old => ({ step: i, sub: 0, n: (old?.n ?? 0) + 1 }));
+  });
+  // only a snapshot of this step's canvas counts (the canvas resets itself when a step begins)
+  const gstate: GState | null = snap && s && guide && snap.n === 1000 + guide.n ? { snap, s, runs } : null;
+  const gref = useRef<GState | null>(null); gref.current = gstate;
+  const baseRef = useRef<GState | null>(null), failed = useRef('');
+  // a sub-step begins: remember the state (its click is measured against it) and send its canvas command
+  useEffect(() => {
+    if (!guide) return;
+    const sub = GUIDE[guide.step].subs[guide.sub];
+    baseRef.current = gref.current;
+    if (sub?.enter) setGcmd(c => ({ ...sub.enter, n: c.n + 1 }));
+  }, [guide?.step, guide?.sub, guide?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!guide || !gstate || busy) return;
+    // the sub-step's start state: taken once this step's canvas has reported (not before the canvas reset itself)
+    if (!baseRef.current) { baseRef.current = gstate; return; }
+    const sub = GUIDE[guide.step].subs[guide.sub];
+    if (sub?.done && sub.done(gstate, baseRef.current)) setGuide(g => g && ({ ...g, sub: g.sub + 1 }));
+  }); // every render: cheap predicates on the current state
+  // In the guided tour every change on the canvas runs at once (no Run button); a failing input is not retried.
+  useEffect(() => {
+    if (!guide || !s || busy || (result && key(s) === key(result.scenario)) || failed.current === key(s)) return;
+    // phase-out slider: the run before the change stays on the plots, grey dashed
+    if (result && s.subsidy_path === 'staircase' && result.scenario.subsidy_path === 'staircase' && s.phase_steps !== result.scenario.phase_steps) setPinned(result);
+    const k0 = key(s), t = window.setTimeout(() => guard(async () => { try { const r = await api<Result>('/runs', s); setResult(r); setS(r.scenario); } catch (e) { failed.current = k0; throw e; } }), 250);
+    return () => clearTimeout(t);
+  }, [s, guide, busy, result]); // eslint-disable-line react-hooks/exhaustive-deps
+  const guideShow = () => {
+    if (!guide) return; const sub = GUIDE[guide.step].subs[guide.sub]; if (!sub?.show) return;
+    if (sub.show.patch) update(sub.show.patch);
+    if (sub.show.cmd) setGcmd(c => ({ ...sub.show!.cmd, n: c.n + 1 }));
+    if (sub.show.click) clickTarget(sub.show.click);
+  };
+  const g = guide ? GUIDE[guide.step] : null;
   // In the tour, new model parameters (Use in the simulation / Back to the netlist values) run at once, so the
   // canvas shows the new dynamics without pressing Run.
   const modelKey = (x?: Scenario | null) => JSON.stringify([x?.param_scale ?? {}, x?.kp, x?.ki, x?.kd, x?.derivative_filter]);
@@ -267,7 +320,7 @@ export default function App() {
   }
   return <>
     <header className="topbar"><div className="brand"><span className="mark">H</span>Housing Policy Lab</div>
-      <div className="top-actions"><button className={tour ? "secondary" : "ghost"} data-no-shot title="Step by step from an empty market to feedback" disabled={busy} onClick={() => tour ? setTour(null) : goTour(0)}>{tour ? "Leave tour" : "Guided tour"}</button><span className={'mode ' + (s.feedback ? 'closed' : 'open')}>{s.feedback ? 'Feedback on' : 'Feedback off'}</span><button className="ghost" data-no-shot title="Save the whole page as a high-resolution PNG (3x)" disabled={shooting} onClick={screenshot}>{shooting ? <LoaderCircle className="spin" size={16}/> : <Camera size={16}/>} Screenshot page</button><button className="ghost" onClick={() => setLibrary(true)}><FolderOpen size={16}/> Saved <b>{saved.length}</b></button></div></header>
+      <div className="top-actions"><button className={guide ? "secondary" : "primary"} data-no-shot title="Where to click, one step at a time" disabled={busy} onClick={() => guide ? setGuide(null) : (seen(), goGuide(0))}>{guide ? "Leave guided tour" : "Guided tour"}</button><button className={tour ? "secondary" : "ghost"} data-no-shot title="The same story without the hand-holding: one click per step, for presenting" disabled={busy} onClick={() => tour ? setTour(null) : (setGuide(null), goTour(0))}>{tour ? "Leave presenter tour" : "Presenter tour"}</button><span className={'mode ' + (s.feedback ? 'closed' : 'open')}>{s.feedback ? 'Feedback on' : 'Feedback off'}</span><button className="ghost" data-no-shot title="Save the whole page as a high-resolution PNG (3x)" disabled={shooting} onClick={screenshot}>{shooting ? <LoaderCircle className="spin" size={16}/> : <Camera size={16}/>} Screenshot page</button><button className="ghost" onClick={() => setLibrary(true)}><FolderOpen size={16}/> Saved <b>{saved.length}</b></button></div></header>
     <main className="workspace wide">
       {error && <div role="alert" className="notice bad">{error}<button aria-label="Dismiss" onClick={() => setError('')}><X size={15}/></button></div>}
       {notice && <div role="status" className="notice good">{notice}</div>}
@@ -276,7 +329,8 @@ export default function App() {
 
       {/* One canvas: scenario and policy in the left dock, analyses on the canvas and in the right dock, results below. */}
       {tour && <TourBar step={tour.step} go={goTour} exit={() => setTour(null)} busy={busy}/>}
-      <div><ModelMap tour={tour ? { n: tour.n, pins: TOUR[tour.step].pins, ident: TOUR[tour.step].ident, tuning: TOUR[tour.step].tuning, compare: TOUR[tour.step].compare, cbs: TOUR[tour.step].cbs, expand: TOUR[tour.step].expand, formulas: TOUR[tour.step].formulas, reject: TOUR[tour.step].reject, robust: TOUR[tour.step].robust } : undefined} scenario={s} result={result} pinned={pinned} shockShow={slideW ? shockRun : null} zn={tour && TOUR[tour.step].robust ? znRun : null} busy={busy} run={simulate} setFeedback={feedback => update({ feedback })} update={update} design={design} setDesign={setDesign} cbs={cbs} lag={lag ?? cbs?.lag_months ?? 0} cpb={cpbShown}
+      {guide && <GuideBar step={guide.step} go={goGuide} exit={() => setGuide(null)} busy={busy}/>}
+      <div><ModelMap guideCmd={gcmd} onSnap={setSnap} tour={guide && g ? { n: 1000 + guide.n, guide: true, pins: g.pins, cbs: g.cbs, compare: true, compareLabel: g.compareOpen ? 'no rule, historical subsidies (grey dashed)' : 'previous run (grey dashed)', rejectSize: g.rejectSize, robust: g.zn } : tour ? { n: tour.n, pins: TOUR[tour.step].pins, ident: TOUR[tour.step].ident, tuning: TOUR[tour.step].tuning, compare: TOUR[tour.step].compare, cbs: TOUR[tour.step].cbs, expand: TOUR[tour.step].expand, formulas: TOUR[tour.step].formulas, reject: TOUR[tour.step].reject, robust: TOUR[tour.step].robust } : undefined} scenario={s} result={result} pinned={pinned} shockShow={slideW ? shockRun : null} zn={guide ? (g?.zn ? znRun : null) : tour && TOUR[tour.step].robust ? znRun : null} busy={busy} run={simulate} setFeedback={feedback => update({ feedback })} update={update} design={design} setDesign={setDesign} cbs={cbs} lag={lag ?? cbs?.lag_months ?? 0} cpb={cpbShown}
         left={<><div className="left-head"><div><p className="eyebrow">Disturbances d</p><h3>Economic scenario</h3></div><button className="ghost small" title="Back to the start values: every slider, switch, controller and model parameter" onClick={() => update({ ...catalogue.defaults, name: s.name })}><RotateCcw size={14}/> Reset all</button></div><p className="muted small">Scales of the historical inputs; 1.00 is the netlist path. Click a group to open it. A dot marks a group that differs from the start values. Run again to see the effect.</p>{scenarioControls}<hr/><p className="eyebrow">Reference r and controller</p><h3>Policy</h3>{policyControls}<button className="primary" disabled={busy} onClick={simulate}><Play size={15}/> Run simulation</button></>}/></div>
 
 
@@ -312,6 +366,8 @@ export default function App() {
     </main>
     <footer className="action-bar" data-no-shot><div className="row"><span className="muted small">One canvas: scenario and policy left, analyses on the canvas and right, results below.</span></div>
       <div className="row"><button className="ghost" disabled={busy} onClick={save}><Save size={15}/> Save</button>{result && <button className="ghost" onClick={exportRun}><Download size={15}/> Export</button>}<button className="secondary" disabled={busy} onClick={both}><GitCompare size={15}/> Run open and closed</button><button className="primary" disabled={busy} onClick={simulate}>{busy ? <LoaderCircle className="spin" size={15}/> : <Play size={15}/>} Run simulation</button></div></footer>
+    {guide && <Coach step={guide.step} sub={guide.sub} busy={busy} onShow={guideShow} onContinue={() => setGuide(x => x && ({ ...x, sub: x.sub + 1 }))} onNext={() => goGuide(guide.step + 1)} onExit={() => setGuide(null)}/>}
+    {welcome && !guide && !tour && <Welcome start={() => { seen(); void goGuide(0); }} close={seen}/>}
     {library && <div className="backdrop"><section className="modal" role="dialog" aria-modal="true" aria-label="Saved scenarios"><div className="policy-head"><h2>Saved scenarios</h2><button className="ghost" aria-label="Close" onClick={() => setLibrary(false)}><X size={16}/></button></div>
       <label className="name">Name for the next save<input value={s.name} maxLength={80} onChange={e => update({ name: e.target.value })}/></label>
       {!saved.length && <p className="muted">Nothing saved yet.</p>}{saved.map(r => <div className="saved" key={r.id}><div><strong>{r.name}</strong><small>{new Date(r.created_at).toLocaleString('en-GB')} · {r.feedback ? 'Closed loop' : 'Open loop'} · {r.has_result ? 'with results' : 'inputs only'}</small></div><button className="ghost" onClick={() => load(r.id)}>Open</button></div>)}</section></div>}

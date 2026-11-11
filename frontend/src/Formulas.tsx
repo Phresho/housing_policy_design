@@ -7,30 +7,35 @@ import 'katex/dist/katex.min.css';
 // flows / elements: what lights up on the canvas when the formula is clicked. Which circuit parts belong to which
 // equation is Claude's reading of the netlist (10 Nov 2026), for Jesse to check.
 // trace: elements whose connecting wires light up as well (the wires between them, not the ports to other agents).
-export type Formula = { id: string; title: string; no: string; tex: string; note?: string; flows: string[]; elements: string[]; trace?: string[] };
+export type Formula = { id: string; title: string; no: string; tex: string; note?: string; explain?: string; flows: string[]; elements: string[]; trace?: string[] };
 export const FORMULAS: Record<string, Formula[]> = {
   constructors: [
     { id: 'construction', title: 'New construction', no: '2.14', tex: 'I_t = (\\gamma+\\omega)\\,\\alpha_t\\,P_m^{\\beta}',
       note: 'γ growth of the stock, ω demolition, β = 0.65 price elasticity of supply',
+      explain: 'New construction follows the house price: 1% higher price, about 0.65% more building. γ + ω is what keeps the stock growing and replaces demolished houses; α is calibrated to observed construction. In the circuit: a controlled source driven by the construction payments.',
       flows: ['houses', 'construction_cost'], elements: ['B§Construction', 'V§Construction_cost', 'L2', 'L4', 'B§Housing_services'] },
   ],
   investors: [
     { id: 'price', title: 'Market price of a house', no: '2.17', tex: 'P_m = \\sum_{t=1}^{\\infty} \\frac{w^{*}(t) - \\kappa(t)}{(1+\\rho)^{t}}',
       note: 'w* gross (imputed) rent, κ maintenance, ρ = 3.95% required return',
-      flows: ['construction_cost'], elements: ['L§Gross_rent', 'L§Gross_imputed_rent', 'V§Maintenance_costs', 'L1', 'R9', 'R13'],
+      explain: 'A house is worth all its future net rents: the rent w* minus maintenance κ, discounted at the required return. The CPB keeps maintenance on its steady path and the return constant, so the price moves with the expected rents. In the circuit: the investors receive the rents and imputed rents, pay maintenance and the construction payments.',
+      flows: ['construction_cost', 'rent', 'imputed_rent'], elements: ['L§Gross_rent', 'L§Gross_imputed_rent', 'V§Maintenance_costs', 'L1', 'R9', 'R13'],
       trace: ['L§Gross_rent', 'L§Gross_imputed_rent', 'V§Maintenance_costs', 'L1', 'R9', 'R13'] },
   ],
   households: [
     { id: 'utility', title: 'Utility', no: '2.1',
       tex: '\\max\\; u = \\Big[\\big(\\theta(h_k-\\bar h_k)^{\\rho} + (1-\\theta)(h_h-\\bar h_h)^{\\rho}\\big)^{1/\\rho}\\Big]^{\\delta}\\, x^{1-\\delta}',
       note: 'θ preference for owning, σ = 1/(1 − ρ) = 2, δ = 0.117',
+      explain: 'Households split their budget over owning (h_k), renting (h_h) and other consumption (x). θ: the preference for owning; h̄: the minimum housing they need; σ = 2: how easily they switch between owning and renting; δ: the weight of housing in utility. In the circuit: controlled sources turn the marginal utilities into incentives.',
       flows: ['rental_services', 'owner_services', 'goods'], elements: ['L§Demand_rent', 'L§Demand_owner_occupied', 'B4', 'L§Demand_consumption'] },
     { id: 'budget', title: 'Budget', no: '2.1', tex: 'b = w_k h_k + w_h h_h + p_x x',
       note: 'every money flow into and out of the households',
+      explain: 'Every euro of the budget b goes to rent, to imputed rent (the housing cost of owner-occupiers) or to other consumption. In the circuit: a conservation law over the household ports, money in equals money out.',
       flows: ['rent', 'imputed_rent', 'consumption', 'income', 'savings', 'savings_interest'],
       elements: ['L§Income', 'L§Consumption', 'L§Rent', 'L§Imputed_rent'] },
     { id: 'subsidy', title: 'Subsidy formula', no: '2.6', tex: 'w_{k,h} = w^{*}_{k,h}\\,(1 - s_{k,h})',
       note: 'sₖ owner-occupied, sₕ rental subsidy rate: the Tax Authority’s inputs',
+      explain: 'Households pay the gross price w* minus a subsidy share s (subsidievoet): sₖ for owning, sₕ for renting. The two rates are the inputs of the system; the Tax Authority sets sₖ, and with feedback the rule sets it from the price gap.',
       flows: ['owner_subsidy', 'rental_subsidy', 'rent', 'imputed_rent'], elements: ['I§Owner_occupied_subsidies', 'I§Rental_subsidies1', 'B§PID'] },
   ],
 };
@@ -50,6 +55,7 @@ export function FormulaCards({ agent, active, pick }: { agent: string; active: s
         <div className="eq-title">{f.title} <span className="eq-no">({f.no})</span></div>
         <div className="eq-body" dangerouslySetInnerHTML={{ __html: html(f.tex) }}/>
         {f.note && <div className="eq-note">{f.note}</div>}
+        {active === f.id && f.explain && <div className="eq-explain">{f.explain}</div>}
       </div>; })}
   </div>;
 }

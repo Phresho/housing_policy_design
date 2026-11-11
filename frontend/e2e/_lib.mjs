@@ -1,6 +1,8 @@
 // Shared helpers for the e2e scripts: the side panels start closed and the guided tour pins no plots by itself.
 export async function openPanels(page) {
   await page.locator('.map-canvas').waitFor({ timeout: 120000 });  // the panel buttons exist once the model map has loaded
+  // first visit: the welcome card offers the guided tour
+  const w = page.getByRole('button', { name: 'Explore on my own' }); if (await w.count()) await w.first().click();
   for (const name of ['Open scenario panel', 'Open panel']) { const b = page.getByRole('button', { name, exact: true }); if (await b.count()) await b.first().click(); }
 }
 // Pin plot cards by clicking lines (edge ids, e.g. 'yout' for the price, 'u2' for the owner subsidy) in the whole-model view.

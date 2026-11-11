@@ -12,7 +12,7 @@ await page.locator('.react-flow__node[data-id="controller"]').click(); await pag
 await page.waitForSelector('.dock-locus .pole-plot', { timeout: 60000 }); await page.waitForTimeout(1200);
 const poles = async () => page.locator('.dock-locus .pp-pole').evaluateAll(es => es.map(e => e.getAttribute('d')?.slice(0, 14)).join('|'));
 const before = await poles();
-for (let i = 0; i < 5; i++) { await page.locator('[aria-label="kp up 10%"]').dispatchEvent('click'); await page.waitForTimeout(120); }
+for (let i = 0; i < 5; i++) { await page.locator('[aria-label="kp up"]').dispatchEvent('click'); await page.waitForTimeout(120); }
 await page.waitForTimeout(1500);
 console.log('Kp now', await page.locator('.gain-step output').first().textContent(), 'poles moved', before !== await poles());
 await page.screenshot({ path: `${out}/k_1.png` });

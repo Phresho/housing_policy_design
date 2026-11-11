@@ -7,7 +7,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 });
 const errors = []; page.on('pageerror', e => errors.push(String(e)));
 await page.goto('http://127.0.0.1:8001/'); await openPanels(page);
-await page.getByRole('button', { name: 'Guided tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 });
+await page.getByRole('button', { name: 'Presenter tour' }).click(); await page.locator('.tour-steps button.on').waitFor({ timeout: 120000 });
 const go = async n => { await page.getByRole('button', { name: new RegExp(`^Step ${n}:`) }).click(); await page.locator('.tour-steps button.on', { hasText: String(n) }).waitFor({ timeout: 120000 }); await page.waitForTimeout(9000); };
 const info = {};
 await go(7); await page.locator('.map-body').screenshot({ path: out + '/step7.png', timeout: 30000 });
@@ -15,7 +15,7 @@ await go(8); await page.locator('.map-body').screenshot({ path: out + '/step8.pn
 await pin(page, ['u2', 'yout']); await page.waitForTimeout(1500);
 info.step8 = await page.locator('.pin-card small').allTextContents();
 const kp0 = await page.locator('.ctrl-box').first().textContent();
-await page.getByRole('button', { name: 'kp up 10%' }).first().click(); await page.waitForTimeout(10000);
+await page.getByRole('button', { name: 'kp up' }).first().click(); await page.waitForTimeout(10000);
 info.kp = [kp0, await page.locator('.ctrl-box').first().textContent()]; info.after = await page.locator('.pin-card small').allTextContents();
 await go(10); await page.locator(".map-body").screenshot({ path: out + "/step9.png", timeout: 30000 });
 info.step9 = await page.locator('.pin-card small').allTextContents();

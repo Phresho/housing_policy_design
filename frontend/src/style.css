@@ -399,3 +399,32 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { opac
 /* robustness legend: larger, spread over the full dock width */
 .robust-docked .robust-legend { justify-content:space-between; font-size:14px; font-weight:500; gap:6px 16px; padding:6px 44px 6px 2px; }
 .robust-docked .robust-legend i { width:30px; border-top-width:3px; margin-right:7px; }
+
+/* Canvas pickers (guided tour, 12 Nov 2026): screen-sized chips on the blocks they belong to */
+.chip-layer { position:absolute; inset:0; z-index:40; pointer-events:none; }
+.chip-row { position:absolute; display:flex; gap:6px; align-items:flex-start; white-space:nowrap; }
+.chip-wrap { position:relative; pointer-events:auto; }
+.chip { display:inline-flex; align-items:center; gap:4px; min-height:0; padding:4px 10px; border-radius:999px; border:1px solid #c9d3cf; background:#fff; color:#3c4a45; font-size:12.5px; box-shadow:0 1px 3px rgba(0,0,0,.08); cursor:pointer; }
+.chip b { color:#1f2a26; font-weight:650; }
+.chip.on { border-color:#3f9a1f; background:#f1f8ec; }
+.chip.seg { padding:3px 4px 3px 10px; gap:2px; cursor:default; }
+.chip.seg button { min-height:0; padding:3px 10px; border:0; border-radius:999px; background:transparent; font-size:12.5px; color:#3c4a45; }
+.chip.seg button.on { background:#145a32; color:#fff; }
+.chip.seg em { font-size:11.5px; color:#8a9692; padding:0 6px; }
+.chip-menu { position:absolute; top:calc(100% + 6px); left:0; min-width:250px; max-width:330px; white-space:normal; display:flex; flex-direction:column; gap:2px; padding:6px; background:#fff; border:1px solid #c9d3cf; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.14); z-index:2; }
+.chip-opt { display:flex; flex-direction:column; align-items:flex-start; gap:1px; min-height:0; padding:6px 10px; border:0; border-radius:7px; background:transparent; text-align:left; font-size:13px; color:#1f2a26; }
+.chip-opt:hover { background:#f1f5f3; } .chip-opt.on { background:#e6f2df; font-weight:650; }
+.chip-opt small { color:#6b7975; font-weight:400; font-size:11.5px; }
+.chip-slider { display:flex; align-items:center; gap:8px; padding:4px 10px 8px 20px; font-size:12.5px; color:#3c4a45; }
+.chip-slider input { flex:1; } .chip-slider output { min-width:18px; font-weight:650; }
+
+/* Guided tour: pulsing ring on the target, speech bubble beside it, welcome card */
+.coach-ring { position:fixed; z-index:90; pointer-events:none; border:3px solid #f0a020; border-radius:10px; animation:coach-pulse 1.4s ease-in-out infinite; }
+@keyframes coach-pulse { 0%,100% { box-shadow:0 0 0 0 rgba(240,160,32,.55); } 50% { box-shadow:0 0 0 10px rgba(240,160,32,0); } }
+.coach { position:fixed; z-index:91; padding:12px 14px; background:#fffdf6; border:1.5px solid #f0a020; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.18); font-size:14px; color:#1f2a26; }
+.coach p { margin:6px 0 10px; line-height:1.45; }
+.coach-head { display:flex; align-items:center; gap:6px; color:#a3640a; font-size:12.5px; }
+.coach-head b { flex:1; } .coach-x { min-height:0; padding:2px 4px; }
+.coach-actions { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
+.modal.welcome { max-width:520px; } .modal.welcome p { line-height:1.5; } .modal.welcome .row { gap:10px; margin-top:14px; }
+.eq-explain { margin-top:6px; padding:6px 8px; border-radius:6px; background:#fff8e6; color:#3c4a45; font-size:calc(11.5px * var(--eq, 1)); line-height:1.4; white-space:normal; }

@@ -4,7 +4,7 @@ import type { Probe } from './ModelMap';
 
 // Guided tour for economists (supervisor, 7 Nov 2026): start from an empty market and add one thing per step.
 // Step sizes, years and the feedback target are Claude's choices. Every step starts from the site's start values.
-const QUIET: Partial<Scenario> = { bank: false, crisis_scale: 0, covid_scale: 0, crisis_w: false, rental_subsidy: false, share_control: false, feedback: false, param_scale: {}, subsidy_path: 'historical', subsidy_scale: 1 };
+export const QUIET: Partial<Scenario> = { bank: false, crisis_scale: 0, covid_scale: 0, crisis_w: false, rental_subsidy: false, share_control: false, feedback: false, param_scale: {}, subsidy_path: 'historical', subsidy_scale: 1 };
 // The "Fitted to CBS" inputs (also the preset button in the left column): open loop, bank on, all shocks.
 // The "CPB fit (peaks)" inputs (also the preset button): the CPB structure with its own path, Claude's fit to the two
 // CPB peaks and the level (5 Nov 2026): income x0.10 growing 5% a year, historical subsidies x10.
@@ -25,9 +25,9 @@ export const TREND_TARGET: Partial<Scenario> = { reference_base: 131.9, target_g
 export const W_SLIDE: Partial<Scenario> = { crisis_w: true, crisis_w_start_yr: 2007.8, crisis_w_fall_yr: 0.8, crisis_w_scale: 1, crisis_w_on_yr: 0.8, crisis_w_recovery_yr: 0.8, crisis_w_floor: 0, crisis_scale: 2, crisis_start_yr: 2011.1 };
 // Stable growth path: income starts at 80 (the historical start 259.056 scaled) and grows 2% a year (Jesse, 10 Nov 2026).
 const INCOME_START = 80;
-const GROWTH: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 2, income_scale: INCOME_START / 259.056 };
-const FLAT: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 0, income_scale: 1 };
-const STEP: Partial<Scenario> = { subsidy_path: 'step', subsidy_base: 0, subsidy_step: 20, subsidy_step_yr: 2005 };
+export const GROWTH: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 2, income_scale: INCOME_START / 259.056 };
+export const FLAT: Partial<Scenario> = { income_path: 'stable', income_growth_pct: 0, income_scale: 1 };
+export const STEP: Partial<Scenario> = { subsidy_path: 'step', subsidy_base: 0, subsidy_step: 20, subsidy_step_yr: 2005 };
 export type TourStep = { title: string; text: string; patch: Partial<Scenario>; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean; formulas?: boolean; reject?: string; robust?: boolean; keepGains?: boolean; cpbOverlay?: boolean; slideW?: boolean; carry?: Partial<Scenario> };
 const price: Probe = { flow: 'y_price', q: 's' }, subsidy: Probe = { flow: 'owner_subsidy', q: 's' }, income: Probe = { flow: 'd_income', q: 's' }, yoy: Probe = { flow: 'y_yoy', q: 's' };
 export const TOUR: TourStep[] = [
@@ -63,3 +63,11 @@ export function TourBar({ step, go, exit, busy }: { step: number; go: (i: number
       <button className="ghost" aria-label="Leave the tour" title="Leave the tour" onClick={exit}><X size={15}/></button></div>
   </div>;
 }
+
+// Canvas pickers and the guided tour (12 Nov 2026): the same paths as the presenter tour, set from the canvas.
+export const PHASE = (n: number): Partial<Scenario> => ({ subsidy_path: 'staircase', phase_from: 30, phase_start_yr: 2005, phase_years: 10, phase_steps: n, subsidy_scale: 1 });
+export const NO_SUBSIDY: Partial<Scenario> = { subsidy_path: 'historical', subsidy_scale: 0 };
+export const ONE_STEP: Partial<Scenario> = { ...STEP, subsidy_scale: 1 };
+// "Shocks: historical" on the canvas: every input fitted to CBS, without touching the loop switch.
+export const SHOCKS_CBS: Partial<Scenario> = (({ feedback: _f, ...rest }) => rest)(FITTED_CBS);
+export const NO_SHOCKS: Partial<Scenario> = { crisis_scale: 0, covid_scale: 0, crisis_w: false };
