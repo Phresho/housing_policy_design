@@ -296,6 +296,9 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
     const st = steps && (info.step ? steps.responses[`${info.step.kind}:${info.step.id}`] : { error: 'An input: no step response' });
     const sent = probes.sensed.some(q => probeKey(q) === probeKey(p));
     const S = sz(id, 'probe'), f = Math.max(1, Math.min(S.w / PIN_W, S.h / PIN_H)), pw = S.w - 12 * f, ph = S.h - (steps ? 40 : 58) * f;
+    // Step response with Play: the year slider's progress runs the step through its own 15 years (no marker at the end)
+    const frac = result && result.year.length > 1 ? at / (result.year.length - 1) : 1, tStep = Object.values(steps?.responses ?? {}).find(r => r.t)?.t;
+    const sAt = (n: number) => frac < 1 ? Math.round(frac * (n - 1)) : undefined, sLab = (i?: number) => i !== undefined && tStep ? `${(frac * tStep[tStep.length - 1]).toFixed(1)} yr` : undefined;
     return <div key={id} className={'pin-card' + (steps ? ' step-mode' : '')} style={{ left: pos.x, top: pos.y, width: S.w, height: S.h, ['--s' as string]: f }} onPointerDown={drag(id, base)}>{handle(id, 'probe')}
       <div className="pin-head"><strong title={info.title}>{steps ? `${info.f.label} · step response` : info.title}</strong><PinTools keepOpen={!!probes.bodeFrom}>
         {(() => { const from = probes.bodeFrom, isFrom = !!from && probeKey(from) === probeKey(p), canIn = !!probeInput(map, p);
@@ -309,13 +312,15 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
           const [k0, unit] = stepSize(steps), tt = Object.values(steps.responses).find(r => r.t)?.t;
           if (!tt) return <small className="muted">Computing…</small>;
           const y0 = tt.map(t => t < 0 ? 0 : k0);
-          return <><MiniPlot y={[0, ...y0]} color={color} w={pw} h={ph} k={f}/></>; })()
+          const i0 = sAt(y0.length + 1);
+          return <><MiniPlot y={[0, ...y0]} at={i0} label={sLab(i0)} color={color} w={pw} h={ph} k={f}/></>; })()
       : steps ? st?.y ? (() => {
           // The interest rate is a fraction (0.01 = 1%): its step is shown per +1 percentage point, not per +1.
           const [k0, unit] = stepSize(steps);
           const y1 = st.y!.map(v => v * k0), so = steps.open && info.step ? steps.open[`${info.step.kind}:${info.step.id}`]?.y : undefined;
           const g = so && so.length === y1.length ? so.map(v => v * k0) : undefined;
-          return <><MiniPlot y={y1} color={color} w={pw} h={ph} k={f} ghost={g} ghostColor="#8a9692"/></>; })() : <small className="muted">{st?.error ?? 'Computing…'}</small>
+          const i1 = sAt(y1.length), lab1 = sLab(i1);
+          return <><MiniPlot y={y1} at={i1} label={lab1} color={color} w={pw} h={ph} k={f} ghost={g} ghostColor="#8a9692"/></>; })() : <small className="muted">{st?.error ?? 'Computing…'}</small>
         : y ? (() => {
           // Proposed parameters (identification): new R, L, C values also move the level, so the proposed run is
           // shifted to start where the current run starts; then only the dynamics differ.
