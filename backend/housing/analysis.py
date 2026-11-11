@@ -188,6 +188,11 @@ def wt_envelope(perturb: float = 0.2, n: int = 150, seed: int = 11):
         P = perturbed(P0, perturb, rng)
         b, c = _loop_vectors(P)
         env = np.maximum(env, np.abs(L.freq(P.E, P.A, b, c, 0, L.W) / G0 - 1))
+    # Running maximum from long to short cycles (11 Nov 2026, Jesse): the weight never decreases with frequency, so
+    # the T limit has no dips; after the peak near a 1.9-year cycle it stays flat at the worst error found (188%).
+    # Still an upper bound of the envelope, so just as safe.
+    order = np.argsort(L.W)
+    env[order] = np.maximum.accumulate(env[order])
     return env
 
 
