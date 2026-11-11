@@ -1064,6 +1064,13 @@ export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, s
     setTf(old => ({ ...old, [role]: { kind: t.kind, id: t.id, label: labelOf(t) } })); setSelection({ kind: 'tf', id: '' }); setMenuAt(null);
   };
   useEffect(() => { api<MapData>('/model/map').then(setMap).catch(e => setError(e.message)); }, []);
+  // The canvas fills the window below the bars above it, down to the action bar (bars come and go with the tours).
+  useEffect(() => {
+    const fit = () => { const c = canvasRef.current; if (!c) return; const top = c.getBoundingClientRect().top + window.scrollY, foot = (document.querySelector('.action-bar') as HTMLElement | null)?.offsetHeight ?? 0;
+      document.documentElement.style.setProperty('--canvas-h', `${Math.max(420, window.innerHeight - top - foot - 14)}px`); };
+    fit(); const ro = new ResizeObserver(fit); ro.observe(document.body); window.addEventListener('resize', fit);
+    return () => { ro.disconnect(); window.removeEventListener('resize', fit); };
+  }, [map]);
   const at = result ? Math.min(index ?? Math.floor(result.year.length / 2), result.year.length - 1) : 0;
   // Play: the year marker runs through the simulation (about 7 s), so the plots and values unfold in time.
   const [playing, setPlaying] = useState(false);
