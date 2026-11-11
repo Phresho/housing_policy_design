@@ -148,6 +148,8 @@ export default function App() {
     const k0 = key(s), t = window.setTimeout(() => guard(async () => { try { const r = await api<Result>('/runs', s); setResult(r); setS(r.scenario); } catch (e) { failed.current = k0; throw e; } }), 250);
     return () => clearTimeout(t);
   }, [s, guide, busy, result]); // eslint-disable-line react-hooks/exhaustive-deps
+  // a step without a closing line goes straight on to the next one
+  useEffect(() => { if (guide && !busy && !GUIDE[guide.step].end && guide.sub >= GUIDE[guide.step].subs.length && guide.step < GUIDE.length - 1) void goGuide(guide.step + 1); }, [guide?.sub, guide?.step]); // eslint-disable-line react-hooks/exhaustive-deps
   const guideShow = () => {
     if (!guide) return; const sub = GUIDE[guide.step].subs[guide.sub]; if (!sub?.show) return;
     if (sub.show.patch) update(sub.show.patch);

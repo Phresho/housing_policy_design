@@ -1011,6 +1011,7 @@ export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, s
     if (guideCmd.view) setView({ ...view, ...guideCmd.view });
     if (guideCmd.stepInput) setStepInput(guideCmd.stepInput);
     if (guideCmd.fit) setFocus(f => ({ id: '', n: f.n + 1 }));
+    if (guideCmd.focus) { const id = guideCmd.focus; window.setTimeout(() => setFocus(f => ({ id, n: f.n + 1 })), 700); }
     if (guideCmd.dock !== undefined) setDock(guideCmd.dock);
   }, [guideCmd?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   const [bodeFrom, setBodeFrom] = useState<Probe | null>(null);

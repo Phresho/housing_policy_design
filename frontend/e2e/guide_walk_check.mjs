@@ -14,13 +14,14 @@ for (let step = 1; step <= 11; step++) {
   await page.waitForFunction(n => document.querySelector('.coach-head b')?.textContent?.startsWith(`Step ${n} `), step, { timeout: 120000 });
   await page.waitForTimeout(2500);
   for (let i = 0; i < 8; i++) {
-    const h = await head(); if (h.endsWith('done')) break;
+    const h = await head(); if (h.endsWith('done') || !h.startsWith(`Step ${step} `)) break;  // a step without a closing line moves on by itself
     const ring = await page.locator('.coach-ring').count();
     const show = page.locator('.coach').getByRole('button', { name: 'Show me' }), cont = page.locator('.coach').getByRole('button', { name: 'Continue' });
     const how = await show.count() ? 'show' : 'continue';
     await page.waitForFunction(() => !document.querySelector('.coach button[disabled]'), null, { timeout: 120000 });
     if (how === 'show') await show.click(); else await cont.click();
     const ok = await page.waitForFunction(prev => document.querySelector('.coach-head b')?.textContent !== prev, h, { timeout: 30000 }).then(() => true).catch(() => false);
+    if (how === 'show') await page.screenshot({ path: `${out}/guide_${step}_${i + 1}.png` });
     rec.subs.push(`${h} [${how}${ring ? ', ring' : ', no ring'}] ${ok ? 'ok' : 'STUCK'}`);
     if (!ok) { await page.screenshot({ path: `${out}/guide_stuck_${step}.png` }); break; }
     await page.waitForTimeout(1500);
@@ -30,6 +31,7 @@ for (let step = 1; step <= 11; step++) {
   rec.end = await page.locator('.coach p').textContent();
   log.steps.push(rec);
   const next = page.locator('.coach').getByRole('button', { name: /Next step/ });
-  if (step < 11) { if (!(await next.count())) { rec.noNext = true; await page.getByRole('button', { name: `Guide step ${step + 1}:`, exact: false }).first().click(); } else await next.click(); }
+  const moved = !(await head()).startsWith(`Step ${step} `);
+  if (step < 11 && !moved) { if (!(await next.count())) { rec.noNext = true; await page.getByRole('button', { name: `Guide step ${step + 1}:`, exact: false }).first().click(); } else await next.click(); }
 }
 console.log(JSON.stringify({ log, errors }, null, 1)); process.exit(0);

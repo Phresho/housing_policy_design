@@ -13,15 +13,16 @@ import { CPB_PEAKS, FLAT, GROWTH, NO_SUBSIDY, ONE_STEP, PHASE, QUIET, SHOCKS_CBS
 export type Snap = { n: number; agents: string[]; system: boolean; cpb: boolean; controller: boolean; formulas: boolean; hl: string | null; pins: string[]; charts: string[]; plays: number; stepping: boolean; sel: string; stepInput: string; showZn: boolean };
 export type GState = { snap: Snap; s: Scenario; runs: number };
 /** One-off canvas commands from the guide (App → ModelMap). */
-export type GuideCmd = { n: number; fit?: boolean; view?: { system?: boolean; cpb?: boolean; formulas?: boolean; controller?: boolean; agents?: string[] }; stepInput?: string; dock?: boolean };
+export type GuideCmd = { n: number; fit?: boolean; focus?: string; view?: { system?: boolean; cpb?: boolean; formulas?: boolean; controller?: boolean; agents?: string[] }; stepInput?: string; dock?: boolean };
 type Sub = {
   target?: string; text: string;
+  avoid?: string;                               // keep the bubble off this block too (e.g. the agent around a + button)
   done?: (g: GState, b: GState) => boolean;     // the click has happened (b: the state when this sub-step began)
   show?: { click?: string; patch?: Partial<Scenario>; cmd?: Omit<GuideCmd, 'n'> };
   enter?: Omit<GuideCmd, 'n'>;                  // canvas command when the sub-step begins
   cont?: boolean;                               // no click to wait for: a Continue button
 };
-export type GuideStep = { title: string; goal: string; setup: Partial<Scenario>; pins: Probe[]; cbs?: boolean; compareOpen?: boolean; rejectSize?: boolean; zn?: boolean; cpbOverlay?: boolean; subs: Sub[]; end: string };
+export type GuideStep = { title: string; goal: string; setup: Partial<Scenario>; pins: Probe[]; cbs?: boolean; compareOpen?: boolean; rejectSize?: boolean; zn?: boolean; cpbOverlay?: boolean; subs: Sub[]; end?: string };  // no end: straight on to the next step
 
 // Canvas targets (CSS selectors)
 const node = (id: string) => `.react-flow__node[data-id="${id}"]`, edge = (id: string) => `.react-flow__edge[data-id="${id}"] .rail-hit`;
@@ -42,16 +43,17 @@ const LOOP = { ...SHOCKS_CBS, ...TREND_TARGET, feedback: false, controller: 'zn'
 export const GUIDE: GuideStep[] = [
   { title: 'The market as a circuit', goal: 'See how the model is built.', setup: START, pins: [], subs: [
     { target: T.market, text: 'Money flows from the Tax Authority into the Housing Market as a subsidy; CBS measures the house price that comes out. Click the Housing Market to open it.', done: g => g.snap.system, show: { click: T.market } },
-    { target: T.households, enter: { view: { system: true, cpb: true, formulas: true } }, text: 'Inside: the CPB model, its agents in four quadrants, each with its CPB equations. Click an equation of Households: the flows it describes light up, with a short explanation.', done: g => !!g.snap.hl, show: { click: T.households } },
-    { target: `${node('households')} button.toggle`, text: 'Now open Households down to its elements, the breadboard: click + on Households.', done: g => g.snap.agents.includes('households'), show: { click: `${node('households')} button.toggle` } },
+    { target: T.households, enter: { view: { system: true, cpb: true, formulas: true } }, avoid: node('households'), text: 'Inside: the CPB model, its agents in four quadrants, each with its CPB equations. Click an equation of Households: the flows it describes light up, with a short explanation.', done: g => !!g.snap.hl, show: { click: T.households } },
+    { target: `${node('households')} button.toggle`, avoid: node('households'), text: 'Now open Households down to its elements, the breadboard: click + on Households.', done: g => g.snap.agents.includes('households'), show: { click: `${node('households')} button.toggle` } },
     { target: T.anyEq, text: 'Click other equations, on any agent, to see what each one describes. Continue when you are ready.', cont: true },
-  ], end: 'Every element of the circuit is one CPB equation.' },
+  ] },
   { title: 'Plot any flow', goal: 'Click a line: its plot stays on the canvas.', setup: START, pins: [], subs: [
     { target: T.u, text: 'Click the owner-occupied subsidy arrow (u): its plot opens and stays on the canvas.', done: pinned('owner_subsidy:s'), show: { click: T.u } },
     { target: T.y, text: 'Click the house price index leaving the market (y): a second plot.', done: pinned('y_price:s'), show: { click: T.y } },
     PLAY('Press ▶ to run the plots through time. Nothing pushes the market yet, so nothing moves.'),
-    { target: T.card, enter: { view: { system: true, cpb: true, agents: ['households', 'investors', 'constructors'] } }, text: 'Everything can be plotted: here is the whole Housing Market, every agent open. Click any line or port to plot it. Drag a plot by its title, resize it from its corner, close it with ×.', cont: true },
-  ], end: 'Any flow, incentive or signal can be plotted.' },
+    { target: T.market, text: 'Flows inside the market can be plotted too. Open the Housing Market again: click it.', done: g => g.snap.system, show: { click: T.market } },
+    { target: edge('rental_services'), enter: { view: { system: true, cpb: true }, focus: 'cpb' }, text: 'Click the rental housing services flow, from Investors to Households: its plot opens like the others.', done: pinned('rental_services:f'), show: { click: edge('rental_services') } },
+  ], end: 'Any flow, incentive or signal can be plotted. Drag a plot by its title, resize it from its corner, close it with ×.' },
   { title: 'One push on the subsidy', goal: 'Raise the subsidy once and watch the market respond.', setup: START, pins: [subsidy, price], subs: [
     { target: T.chipSub, text: 'Open “Subsidy path” under the Tax Authority and choose One step: from 0 to 20 in 2005.', done: (g, b) => g.s.subsidy_path === 'step' && ran(g, b), show: { patch: ONE_STEP } },
     PLAY('Press ▶. The price overshoots, turns and settles: the market’s own dynamics.'),
@@ -126,7 +128,7 @@ export function GuideBar({ step, go, exit, busy }: { step: number; go: (i: numbe
 /** Pulsing ring on the target and a speech bubble next to it (fixed to the window, follows the canvas). */
 export function Coach({ step, sub, busy, onShow, onContinue, onNext, onExit }: { step: number; sub: number; busy: boolean; onShow: () => void; onContinue: () => void; onNext: () => void; onExit: () => void }) {
   const t = GUIDE[step], s = t.subs[sub], last = step === GUIDE.length - 1;
-  const [rect, setRect] = useState<DOMRect | null>(null);
+  const [rect, setRect] = useState<DOMRect | null>(null), [area, setArea] = useState<DOMRect | null>(null);
   useEffect(() => {
     const sel = s?.target; if (!sel) { setRect(null); return; }
     // every frame, so the ring stays on the target while the canvas moves; an open picker menu counts as part of it
@@ -135,7 +137,11 @@ export function Coach({ step, sub, busy, onShow, onContinue, onNext, onExit }: {
       const el = document.querySelector(sel), r = el?.getBoundingClientRect(), m = el?.querySelector('.chip-menu')?.getBoundingClientRect();
       const u = r && m ? new DOMRect(Math.min(r.left, m.left), Math.min(r.top, m.top), Math.max(r.right, m.right) - Math.min(r.left, m.left), Math.max(r.bottom, m.bottom) - Math.min(r.top, m.top)) : r;
       const ok = u && u.width + u.height > 0 && u.bottom > 0 && u.top < window.innerHeight ? u : null, k = ok ? [ok.left, ok.top, ok.width, ok.height].map(Math.round).join() : '';
-      if (k !== last) { last = k; setRect(ok); }
+      // the bubble keeps off the target and, when set, the block around it
+      const a = s?.avoid ? document.querySelector(s.avoid)?.getBoundingClientRect() : null;
+      const v = ok && a ? new DOMRect(Math.min(ok.left, a.left), Math.min(ok.top, a.top), Math.max(ok.right, a.right) - Math.min(ok.left, a.left), Math.max(ok.bottom, a.bottom) - Math.min(ok.top, a.top)) : ok;
+      const kk = k + (v ? [v.left, v.top, v.width, v.height].map(Math.round).join() : '');
+      if (kk !== last) { last = kk; setRect(ok); setArea(v); }
       raf = requestAnimationFrame(measure);
     };
     measure(); return () => cancelAnimationFrame(raf);
@@ -143,16 +149,17 @@ export function Coach({ step, sub, busy, onShow, onContinue, onNext, onExit }: {
   const W = 340, pad = 14, vw = window.innerWidth, vh = window.innerHeight;
   // bubble below the target when there is room, otherwise above it; docked at the bottom when there is no target
   let pos: React.CSSProperties = { left: vw / 2 - W / 2, bottom: 84 };
-  if (rect && s) {
-    const left = Math.min(Math.max(rect.left + rect.width / 2 - W / 2, 12), vw - W - 12);
-    pos = rect.bottom + 200 < vh ? { left, top: rect.bottom + pad } : rect.top > 220 ? { left, bottom: vh - rect.top + pad }
-      : { left: rect.right + W + pad < vw ? rect.right + pad : Math.max(rect.left - W - pad, 12), top: Math.max(rect.top, 12) };
+  const box = area ?? rect;
+  if (box && s) {
+    const left = Math.min(Math.max(box.left + box.width / 2 - W / 2, 12), vw - W - 12);
+    pos = box.bottom + 200 < vh ? { left, top: box.bottom + pad } : box.top > 220 ? { left, bottom: vh - box.top + pad }
+      : { left: box.right + W + pad < vw ? box.right + pad : Math.max(box.left - W - pad, 12), top: Math.max(Math.min(box.top, vh - 240), 12) };
   }
   return <>
     {rect && s && <div className="coach-ring" style={{ left: rect.left - 6, top: rect.top - 6, width: rect.width + 12, height: rect.height + 12 }}/>}
     <div className="coach" role="dialog" aria-label="Guided tour hint" style={{ ...pos, width: W }} data-no-shot>
       <div className="coach-head"><MousePointerClick size={15}/><b>Step {step + 1} · {s ? `${sub + 1} of ${t.subs.length}` : 'done'}</b><button className="ghost coach-x" aria-label="Leave the guided tour" onClick={onExit}><X size={14}/></button></div>
-      <p>{s ? s.text : <><b>{t.end}</b></>}</p>
+      <p>{s ? s.text : <><b>{t.end ?? ''}</b></>}</p>
       <div className="coach-actions">
         {s?.show && <button className="ghost" disabled={busy} onClick={onShow}>Show me</button>}
         {s?.cont && <button className="primary" disabled={busy} onClick={onContinue}>Continue</button>}
