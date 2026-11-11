@@ -954,9 +954,9 @@ export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, s
     const timer = window.setTimeout(() => {
       const ask = (feedback: boolean) => api<NonNullable<StepData>>('/analysis/steps', { input: { kind: 'signal', id: stepInput }, outputs: outs, feedback, K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, scale: { ...(scenario.param_scale ?? {}), ...(scenario.bank ? {} : { NO_BANK: 0 }) } });
       const closed = scenario.feedback && stepInput !== 'u_open';
-      // Disturbance rejection (tour): the same unit shock without the controller, for comparison (grey dashed)
+      // Disturbance rejection (tour and free use): the same shock without the controller, for comparison (grey dashed)
       // (only for a disturbance: a step in the target r has no open-loop response; a failed comparison is left out)
-      Promise.all([ask(closed), tourReject && closed && stepInput.startsWith('d_') ? ask(false).catch(() => null) : Promise.resolve(null)])
+      Promise.all([ask(closed), closed && stepInput.startsWith('d_') ? ask(false).catch(() => null) : Promise.resolve(null)])
         .then(([c, o]) => setSteps({ ...c, inputId: stepInput, reject: tourReject, ...(o ? { open: o.responses } : {}) })).catch(e => setSteps({ input: '', responses: Object.fromEntries(outs.map(o => [`${o!.kind}:${o!.id}`, { error: (e as Error).message }])) }));
     }, 120);
     return () => clearTimeout(timer);
