@@ -230,6 +230,11 @@ const SHOCK_STEP: Record<string, [number, string]> = {
   d_interest: [0.01, '+1 percentage point'], d_income: [-10, '−10'], d_mortgages: [-1, '−1'],
 };
 const stepSize = (steps: NonNullable<StepData>): [number, string] => steps.inputId === 'd_interest' ? [0.01, '+1 percentage point'] : steps.reject && steps.inputId && SHOCK_STEP[steps.inputId] ? SHOCK_STEP[steps.inputId] : [1, '+1'];
+// Year-on-year step response (no own response): from the house-price step, 100·(Δp(t) − Δp(t − 1 yr)) / p₀,
+// p₀ the price at the start of the run; Δp is zero before the step.
+const PRICE_KEY = 'signal:y_price';
+const yoyStep = (t: number[], dp: number[], p0: number) => t.map((ti, i) => { const back = ti - 1; let j = 0; while (j < t.length - 1 && t[j + 1] <= back) j++;
+  const prev = back < t[0] ? 0 : dp[j]; return 100 * (dp[i] - prev) / p0; });
 export type StepData = { input: string; inputId?: string; reject?: boolean; responses: Record<string, { t?: number[]; y?: number[]; error?: string }>; open?: Record<string, { t?: number[]; y?: number[]; error?: string }> } | null;
 function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { map: MapData; probes: ProbeState; result: Result | null; at: number; fallback: Record<string, XY>; steps?: StepData; lines?: Record<string, Point[]> }) {
   const [tx, ty, k] = useStore(s => s.transform);
@@ -263,11 +268,19 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
   const at_ = (id: string, i = 0): XY => (live?.id === id ? live : probes.pos[id] ?? fallback[id] ?? { x: 0, y: i * (PIN_H + 20) });
   const charts = probes.charts.map((c, i) => {
     const id = c.id, pos = at_(id, i), base = probes.pos[id] ?? fallback[id] ?? { x: 0, y: 0 };
-    const title = c.kind === 'sens' ? 'S, T, KS · price loop' : c.kind === 'cbs' ? 'Year-on-year house price change · model and CBS' : `Bode · ${probeInfo(map, c.from).f.label} → ${probeInfo(map, c.to).f.label}`;
+    // Step mode: the CBS card shows the year-on-year step response (from the price step), not the historical run
+    const pr = steps && c.kind === 'cbs' ? steps.responses[PRICE_KEY] : undefined, p0 = result ? readTrace(result, 'I(Construction_cost)')?.[0] : undefined;
+    const title = c.kind === 'sens' ? 'S, T, KS · price loop' : c.kind === 'cbs' ? (steps ? 'Year-on-year house price change · step response' : 'Year-on-year house price change · model and CBS') : `Bode · ${probeInfo(map, c.from).f.label} → ${probeInfo(map, c.to).f.label}`;
     const S = sz(id, c.kind), bw = S.w - 16, D = DEFAULT[c.kind], f = Math.max(1, Math.min(S.w / D.w, S.h / D.h));
     return <div key={id} className={'pin-card chart-card ' + c.kind} style={{ left: pos.x, top: pos.y, width: S.w, height: S.h, ['--s' as string]: f }} onPointerDown={drag(id, base)}>{handle(id, c.kind)}
       <div className="pin-head"><strong title={title}>{title}</strong>{c.kind === 'cbs' && <PinTools><button aria-label="Send to the dock" title="Open the CBS sensor in the dock" onClick={probes.openSensor}>⇥</button></PinTools>}<button className="pin-close" aria-label="Remove from the canvas" title="Remove from the canvas" onClick={() => probes.removeChart(id)}>×</button></div>
-      {c.kind === 'cbs' ? <><YoyBody at={at} color={probes.muted ? MUTED : undefined} k={f} w={bw} h={S.h - 64 * f} year={result?.year} model={result?.scenario.inflation_pct ? result.series.yoy.map(v => v + result.scenario.inflation_pct) : result?.series.yoy} cbs={probes.cbs} lag={probes.lag} cpb={probes.cpb} ghost={probes.compare && !probes.compare.align && probes.compare.result.series.yoy ? probes.compare.result.series.yoy.map(v => v + (probes.compare!.result.scenario.inflation_pct ?? 0)) : undefined} ghost2={probes.compare2?.result.series.yoy ? probes.compare2.result.series.yoy.map(v => v + (probes.compare2!.result.scenario.inflation_pct ?? 0)) : undefined}/><small>Green: model run{probes.compare && !probes.compare.align ? ', grey dashed: open loop' : ''}{probes.compare2 ? ', green dotted: Ziegler–Nichols PID' : ''}{result ? '' : ' (run the simulation)'}.{probes.cpb ? ' Green dashed: CPB model.' : ''} Grey: CBS index, moved {probes.lag} month{Math.abs(probes.lag) === 1 ? '' : 's'}. % a year.</small></>
+      {c.kind === 'cbs' && steps ? (() => {
+          if (!pr?.t || !pr.y || !p0) return <small className="muted">{pr?.error ?? 'Computing…'}</small>;
+          const [k0] = stepSize(steps), y1 = yoyStep(pr.t, pr.y.map(v => v * k0), p0), po = steps.open?.[PRICE_KEY];
+          const g = po?.t && po.y && po.y.length === pr.y.length ? yoyStep(po.t, po.y.map(v => v * k0), p0) : undefined;
+          const frac = result && result.year.length > 1 ? at / (result.year.length - 1) : 1, i1 = frac < 1 ? Math.round(frac * (y1.length - 1)) : undefined;
+          return <><MiniPlot y={y1} at={i1} label={i1 !== undefined ? `${(frac * pr.t[pr.t.length - 1]).toFixed(1)} yr` : undefined} color="#3f9a1f" w={bw} h={S.h - 64 * f} k={f} ghost={g} ghostColor="#8a9692"/><small>Change in the year-on-year rate after the step, percentage points, {pr.t[pr.t.length - 1].toFixed(0)} years.{g ? ' Grey dashed: without the controller.' : ''}</small></>; })()
+      : c.kind === 'cbs' ? <><YoyBody at={at} color={probes.muted ? MUTED : undefined} k={f} w={bw} h={S.h - 64 * f} year={result?.year} model={result?.scenario.inflation_pct ? result.series.yoy.map(v => v + result.scenario.inflation_pct) : result?.series.yoy} cbs={probes.cbs} lag={probes.lag} cpb={probes.cpb} ghost={probes.compare && !probes.compare.align && probes.compare.result.series.yoy ? probes.compare.result.series.yoy.map(v => v + (probes.compare!.result.scenario.inflation_pct ?? 0)) : undefined} ghost2={probes.compare2?.result.series.yoy ? probes.compare2.result.series.yoy.map(v => v + (probes.compare2!.result.scenario.inflation_pct ?? 0)) : undefined}/><small>Green: model run{probes.compare && !probes.compare.align ? ', grey dashed: open loop' : ''}{probes.compare2 ? ', green dotted: Ziegler–Nichols PID' : ''}{result ? '' : ' (run the simulation)'}.{probes.cpb ? ' Green dashed: CPB model.' : ''} Grey: CBS index, moved {probes.lag} month{Math.abs(probes.lag) === 1 ? '' : 's'}. % a year.</small></>
       : c.kind === 'sens' ? <SensBody k={f} w={bw} h={S.h - 100 * f} K={probes.ctx.K} filtered={probes.ctx.filtered} settling={probes.ctx.settling} overshoot={probes.ctx.overshoot}/>
         : <BodeBody k={f} w={bw} h={S.h - 74 * f} input={probeInput(map, c.from)!} output={probeInfo(map, c.to).step!} feedback={probes.ctx.feedback} K={probes.ctx.K} filtered={probes.ctx.filtered}/>}</div>;
   });
@@ -314,6 +327,11 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
           const y0 = tt.map(t => t < 0 ? 0 : k0);
           const i0 = sAt(y0.length + 1);
           return <><MiniPlot y={[0, ...y0]} at={i0} label={sLab(i0)} color={color} w={pw} h={ph} k={f}/></>; })()
+      : steps && p.flow === 'y_yoy' && p.q === 's' ? (() => {
+          const pr = steps.responses[PRICE_KEY], po = steps.open?.[PRICE_KEY], p0 = result ? readTrace(result, 'I(Construction_cost)')?.[0] : undefined;
+          if (!pr?.t || !pr.y || !p0) return <small className="muted">{pr?.error ?? 'Computing…'}</small>;
+          const [k0] = stepSize(steps), y1 = yoyStep(pr.t, pr.y.map(v => v * k0), p0), g = po?.t && po.y && po.y.length === pr.y.length ? yoyStep(po.t, po.y.map(v => v * k0), p0) : undefined, i1 = sAt(y1.length);
+          return <><MiniPlot y={y1} at={i1} label={sLab(i1)} color={color} w={pw} h={ph} k={f} ghost={g} ghostColor="#8a9692"/></>; })()
       : steps ? st?.y ? (() => {
           // The interest rate is a fraction (0.01 = 1%): its step is shown per +1 percentage point, not per +1.
           const [k0, unit] = stepSize(steps);
@@ -949,8 +967,10 @@ export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, s
   const stepInput = ident ? 'u_open' : !scenario.feedback && stepChoice === 'y_reference' ? 'u_open' : stepChoice;
   const [steps, setSteps] = useState<StepData>(null);
   useEffect(() => {
-    if (!stepping || !map || !pins.length) { setSteps(null); return; }
-    const outs = pins.map(p => probeInfo(map, p).step).filter(Boolean);
+    const wantYoy = pins.some(p => p.flow === 'y_yoy') || charts.some(c => c.kind === 'cbs');
+    const outs0 = [...pins.map(p => probeInfo(map!, p).step).filter(Boolean), ...(wantYoy ? [{ kind: 'signal', id: 'y_price' } as const] : [])];
+    const outs = outs0.filter((o, i) => outs0.findIndex(q => q!.kind === o!.kind && q!.id === o!.id) === i);
+    if (!stepping || !map || !outs.length) { setSteps(null); return; }
     const timer = window.setTimeout(() => {
       const ask = (feedback: boolean) => api<NonNullable<StepData>>('/analysis/steps', { input: { kind: 'signal', id: stepInput }, outputs: outs, feedback, K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, scale: { ...(scenario.param_scale ?? {}), ...(scenario.bank ? {} : { NO_BANK: 0 }) } });
       const closed = scenario.feedback && stepInput !== 'u_open';
@@ -960,7 +980,7 @@ export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, s
         .then(([c, o]) => setSteps({ ...c, inputId: stepInput, reject: tourReject, ...(o ? { open: o.responses } : {}) })).catch(e => setSteps({ input: '', responses: Object.fromEntries(outs.map(o => [`${o!.kind}:${o!.id}`, { error: (e as Error).message }])) }));
     }, 120);
     return () => clearTimeout(timer);
-  }, [stepping, map, pins, stepInput, scenario.feedback, scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.param_scale, scenario.bank, tourReject]);
+  }, [stepping, map, pins, stepInput, scenario.feedback, scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.param_scale, scenario.bank, tourReject, charts]);
   const stepGain = useCallback((k: GainKey, up: boolean) => latest.current.update(stepPatch(latest.current.scenario, k, up)), []);
   const same = (a: Probe) => (b: Probe) => a.flow === b.flow && a.q === b.q;
   const toggleIn = (set: React.Dispatch<React.SetStateAction<Probe[]>>) => (p: Probe) => set(old => old.some(same(p)) ? old.filter(x => !same(p)(x)) : [...old, p]);
