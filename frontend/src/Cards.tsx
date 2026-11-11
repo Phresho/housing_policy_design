@@ -63,11 +63,12 @@ export function SensBody({ K, filtered, settling, overshoot, w = 268, h = 168, k
 }
 
 /** Year-on-year change: CBS bars (moved by `lag` months) behind the model line. */
-export function YoyBody({ year, model, cbs, lag, cpb, w = 356, h = 150, k = 1, ghost, ghost2, color = '#3f9a1f' }: { year?: number[]; model?: number[]; cbs?: { year: number[]; yoy: number[] }; lag: number; cpb?: { year: number[]; yoy: number[] }; w?: number; h?: number; k?: number; ghost?: number[]; ghost2?: number[]; color?: string }) {
+export function YoyBody({ year, model, cbs, lag, cpb, w = 356, h = 150, k = 1, ghost, ghost2, color = '#3f9a1f', at }: { year?: number[]; model?: number[]; cbs?: { year: number[]; yoy: number[] }; lag: number; cpb?: { year: number[]; yoy: number[] }; w?: number; h?: number; k?: number; ghost?: number[]; ghost2?: number[]; color?: string; at?: number }) {
   if (!cbs && !model) return <small className="muted">No data yet.</small>;
   const x0 = 1996, x1 = 2027, cy = cbs ? cbs.year.map(v => v + lag / 12) : [];
   const all = [...(cbs?.yoy ?? []), ...(model ?? []), ...(cpb?.yoy ?? []), ...(ghost ?? []), ...(ghost2 ?? [])], lo = Math.min(-2, ...all), hi = Math.max(2, ...all);
   const L = 26 * k, B = 16 * k, sx = (v: number) => L + (v - x0) / (x1 - x0) * (w - L - 4), sy = (v: number) => 6 * k + (hi - v) / (hi - lo) * (h - B - 6 * k), bw = (w - L - 4) / (x1 - x0) / 12;
+  const mk = at !== undefined && !!year && !!model && at < year.length - 1 && at < model.length;
   return <svg width={w} height={h} className="mini-plot">
     <rect x={0} y={0} width={w} height={h} fill="#fff"/>
     {[2000, 2005, 2010, 2015, 2020, 2025].map(y => <g key={y}><line x1={sx(y)} x2={sx(y)} y1={6 * k} y2={h - B} stroke="#eef1ef"/><text x={sx(y)} y={h - 4 * k} textAnchor="middle" className="mini-tick">{y}</text></g>)}
@@ -76,6 +77,10 @@ export function YoyBody({ year, model, cbs, lag, cpb, w = 356, h = 150, k = 1, g
     {cpb && <polyline fill="none" stroke="#3f9a1f" strokeWidth={2.6 * k} strokeDasharray={`${8 * k} ${5 * k}`} points={cpb.year.flatMap((t, i) => [`${sx(t)},${sy(cpb.yoy[i])}`, `${sx(t + 1)},${sy(cpb.yoy[i])}`]).join(' ')}/>}
     {ghost && year && ghost.length === year.length && <polyline fill="none" stroke="#8a9692" strokeWidth={2.6 * k} strokeDasharray={`${7 * k} ${4 * k}`} points={year.map((t, i) => `${sx(t)},${sy(ghost[i])}`).join(' ')}/>}
     {ghost2 && year && ghost2.length === year.length && <polyline fill="none" stroke={color} strokeWidth={3.6 * k} strokeDasharray={`${0.5 * k} ${5 * k}`} strokeLinecap="round" points={year.map((t, i) => `${sx(t)},${sy(ghost2[i])}`).join(' ')}/>}
-    {model && year && <polyline fill="none" stroke={color} strokeWidth={3 * k} strokeLinejoin="round" points={year.map((t, i) => `${sx(t)},${sy(model[i])}`).join(' ')}/>}
+    {model && year && <polyline fill="none" stroke={color} strokeOpacity={mk ? .22 : 1} strokeWidth={3 * k} strokeLinejoin="round" points={year.map((t, i) => `${sx(t)},${sy(model[i])}`).join(' ')}/>}
+    {/* Play / year slider: the line up to that year is dark, a dot with the year rides on it (no marker at the end) */}
+    {mk && model && year && <><polyline fill="none" stroke={color} strokeWidth={3 * k} strokeLinejoin="round" points={year.slice(0, at! + 1).map((t, i) => `${sx(t)},${sy(model[i])}`).join(' ')}/>
+      <line x1={sx(year[at!])} x2={sx(year[at!])} y1={6 * k} y2={h - B} stroke="#8a9692" strokeDasharray="3 3"/><circle cx={sx(year[at!])} cy={sy(model[at!])} r={3.8 * k} fill={color} stroke="#fff" strokeWidth={1.2 * k}/>
+      <text x={Math.min(Math.max(sx(year[at!]), L + 18 * k), w - 18 * k)} y={sy(model[at!]) < h / 2 ? sy(model[at!]) + 15 * k : sy(model[at!]) - 8 * k} textAnchor="middle" className="mini-year">{year[at!].toFixed(1)}</text></>}
   </svg>;
 }
