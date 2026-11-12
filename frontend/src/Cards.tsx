@@ -74,12 +74,12 @@ export function YoyBody({ year, model, cbs, lag, cpb, w = 356, h = 150, k = 1, g
     {[2000, 2005, 2010, 2015, 2020, 2025].map(y => <g key={y}><line x1={sx(y)} x2={sx(y)} y1={6 * k} y2={h - B} stroke="#eef1ef"/><text x={sx(y)} y={h - 4 * k} textAnchor="middle" className="mini-tick">{y}</text></g>)}
     {[-5, 0, 5, 10, 15, 20].filter(v => v >= lo && v <= hi).map(v => <g key={v}><line x1={L} x2={w} y1={sy(v)} y2={sy(v)} stroke={v === 0 ? '#aab5b0' : '#f1f3f2'}/><text x={L - 4 * k} y={sy(v) + 3 * k} textAnchor="end" className="mini-tick">{v}</text></g>)}
     {cbs && cy.map((t, i) => t >= x0 && t <= x1 && <rect key={i} x={sx(t) - bw * .4} width={bw * .8} y={Math.min(sy(0), sy(cbs.yoy[i]))} height={Math.abs(sy(cbs.yoy[i]) - sy(0))} fill="#c4c9c6"/>)}
-    {cpb && <polyline fill="none" stroke="#3f9a1f" strokeWidth={2.6 * k} strokeDasharray={`${8 * k} ${5 * k}`} points={cpb.year.flatMap((t, i) => [`${sx(t)},${sy(cpb.yoy[i])}`, `${sx(t + 1)},${sy(cpb.yoy[i])}`]).join(' ')}/>}
-    {ghost && year && ghost.length === year.length && <polyline fill="none" stroke="#8a9692" strokeWidth={2.6 * k} strokeDasharray={`${7 * k} ${4 * k}`} points={year.map((t, i) => `${sx(t)},${sy(ghost[i])}`).join(' ')}/>}
-    {ghost2 && year && ghost2.length === year.length && <polyline fill="none" stroke={color} strokeWidth={3.6 * k} strokeDasharray={`${0.5 * k} ${5 * k}`} strokeLinecap="round" points={year.map((t, i) => `${sx(t)},${sy(ghost2[i])}`).join(' ')}/>}
-    {model && year && <polyline fill="none" stroke={color} strokeOpacity={mk ? .22 : 1} strokeWidth={3 * k} strokeLinejoin="round" points={year.map((t, i) => `${sx(t)},${sy(model[i])}`).join(' ')}/>}
+    {cpb && <polyline fill="none" stroke="#9fd08a" strokeWidth={1.8 * k} strokeDasharray={`${7 * k} ${4 * k}`} points={cpb.year.flatMap((t, i) => [`${sx(t)},${sy(cpb.yoy[i])}`, `${sx(t + 1)},${sy(cpb.yoy[i])}`]).join(' ')}/>}
+    {ghost && year && ghost.length === year.length && <polyline fill="none" stroke="#8a9692" strokeWidth={1.8 * k} strokeDasharray={`${6 * k} ${4 * k}`} points={year.map((t, i) => `${sx(t)},${sy(ghost[i])}`).join(' ')}/>}
+    {ghost2 && year && ghost2.length === year.length && <polyline fill="none" stroke={color} strokeWidth={2.8 * k} strokeDasharray={`${0.5 * k} ${4.5 * k}`} strokeLinecap="round" points={year.map((t, i) => `${sx(t)},${sy(ghost2[i])}`).join(' ')}/>}
+    {model && year && <polyline fill="none" stroke={color} strokeOpacity={mk ? .22 : 1} strokeWidth={2 * k} strokeLinejoin="round" points={year.map((t, i) => `${sx(t)},${sy(model[i])}`).join(' ')}/>}
     {/* Play / year slider: the line up to that year is dark, a dot with the year rides on it (no marker at the end) */}
-    {mk && model && year && <><polyline fill="none" stroke={color} strokeWidth={3 * k} strokeLinejoin="round" points={year.slice(0, at! + 1).map((t, i) => `${sx(t)},${sy(model[i])}`).join(' ')}/>
+    {mk && model && year && <><polyline fill="none" stroke={color} strokeWidth={2 * k} strokeLinejoin="round" points={year.slice(0, at! + 1).map((t, i) => `${sx(t)},${sy(model[i])}`).join(' ')}/>
       <line x1={sx(year[at!])} x2={sx(year[at!])} y1={6 * k} y2={h - B} stroke="#8a9692" strokeDasharray="3 3"/><circle cx={sx(year[at!])} cy={sy(model[at!])} r={3.8 * k} fill={color} stroke="#fff" strokeWidth={1.2 * k}/>
       <text x={Math.min(Math.max(sx(year[at!]), L + 18 * k), w - 18 * k)} y={sy(model[at!]) < h / 2 ? sy(model[at!]) + 15 * k : sy(model[at!]) - 8 * k} textAnchor="middle" className="mini-year">{year[at!].toFixed(1)}</text></>}
   </svg>;

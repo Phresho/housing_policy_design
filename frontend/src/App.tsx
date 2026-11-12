@@ -110,6 +110,15 @@ export default function App() {
   const [welcome, setWelcome] = useState(() => { try { return localStorage.getItem('hpl.welcome') !== 'seen'; } catch { return true; } });
   const seen = () => { setWelcome(false); try { localStorage.setItem('hpl.welcome', 'seen'); } catch { /* storage blocked */ } };
   useEffect(() => { if (result) setRuns(r => r + 1); }, [result]);
+  // The tour survives a page reload (e.g. the tab picking up a new build): its step is kept for this tab and resumed.
+  const resumed = useRef(false);
+  // (cleared only on leaving the tour, not on the first render after a reload, before the step is read back)
+  useEffect(() => { try { if (guide) sessionStorage.setItem('hpl.guide', String(guide.step)); else if (resumed.current) sessionStorage.removeItem('hpl.guide'); } catch { /* storage blocked */ } }, [guide?.step, !!guide]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!catalogue || resumed.current) return; resumed.current = true;
+    let at: number | null = null; try { const v = sessionStorage.getItem('hpl.guide'); at = v === null ? null : Number(v); } catch { /* storage blocked */ }
+    if (at !== null && at >= 0 && at < GUIDE.length) { setWelcome(false); void goGuide(at); }
+  }, [catalogue]); // eslint-disable-line react-hooks/exhaustive-deps
   const goGuide = (i: number) => guard(async () => {
     if (!catalogue) return;
     const g = GUIDE[i], next = { ...catalogue.defaults, name: `Guided tour ${i + 1}: ${g.title}`, ...g.setup } as Scenario;
@@ -125,7 +134,7 @@ export default function App() {
   // only a snapshot of this step's canvas counts (the canvas resets itself when a step begins)
   const gstate: GState | null = snap && s && guide && snap.n === 1000 + guide.n ? { snap, s, runs } : null;
   const gref = useRef<GState | null>(null); gref.current = gstate;
-  const baseRef = useRef<GState | null>(null), failed = useRef('');
+  const baseRef = useRef<GState | null>(null);
   // a sub-step begins: remember the state (its click is measured against it) and send its canvas command
   useEffect(() => {
     if (!guide) return;
@@ -133,23 +142,28 @@ export default function App() {
     baseRef.current = gref.current;
     if (sub?.enter) setGcmd(c => ({ ...sub.enter, n: c.n + 1 }));
   }, [guide?.step, guide?.sub, guide?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  // a sub-step only counts once the settings have been still for a moment (a slider being dragged is not done yet)
+  const changedAt = useRef(0), [tick, setTick] = useState(0);
+  const sKey = s ? key(s) : '';
+  useEffect(() => { changedAt.current = Date.now(); const t = window.setTimeout(() => setTick(n => n + 1), 1300); return () => clearTimeout(t); }, [sKey]);
   useEffect(() => {
     if (!guide || !gstate || busy) return;
+    if (Date.now() - changedAt.current < 1200) return;  // re-checked by the tick above
+    void tick;
     // the sub-step's start state: taken once this step's canvas has reported (not before the canvas reset itself)
     if (!baseRef.current) { baseRef.current = gstate; return; }
     const sub = GUIDE[guide.step].subs[guide.sub];
     if (sub?.done && sub.done(gstate, baseRef.current)) setGuide(g => g && ({ ...g, sub: g.sub + 1 }));
   }); // every render: cheap predicates on the current state
-  // In the guided tour every change on the canvas runs at once (no Run button); a failing input is not retried.
-  useEffect(() => {
-    if (!guide || !s || busy || (result && key(s) === key(result.scenario)) || failed.current === key(s)) return;
-    // phase-out slider: the run before the change stays on the plots, grey dashed
+  // In the guided tour nothing runs until ▶ (Jesse, 11 Nov 2026): Play runs the changed inputs first, then plays them.
+  // Phase-out: the run before a change of the number of steps stays on the plots, grey dashed.
+  const guideRun = () => guard(async () => {
+    if (!s) return;
     if (result && s.subsidy_path === 'staircase' && result.scenario.subsidy_path === 'staircase' && s.phase_steps !== result.scenario.phase_steps) setPinned(result);
-    const k0 = key(s), t = window.setTimeout(() => guard(async () => { try { const r = await api<Result>('/runs', s); setResult(r); setS(r.scenario); } catch (e) { failed.current = k0; throw e; } }), 250);
-    return () => clearTimeout(t);
-  }, [s, guide, busy, result]); // eslint-disable-line react-hooks/exhaustive-deps
+    const r = await api<Result>('/runs', s); setResult(r); setS(r.scenario);
+  });
   // a step without a closing line goes straight on to the next one
-  useEffect(() => { if (guide && !busy && !GUIDE[guide.step].end && guide.sub >= GUIDE[guide.step].subs.length && guide.step < GUIDE.length - 1) void goGuide(guide.step + 1); }, [guide?.sub, guide?.step]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const st = guide && GUIDE[guide.step]; if (guide && st && !busy && !st.end && st.subs[st.subs.length - 1]?.cont && guide.sub >= st.subs.length && guide.step < GUIDE.length - 1) void goGuide(guide.step + 1); }, [guide?.sub, guide?.step]); // eslint-disable-line react-hooks/exhaustive-deps
   const guideShow = () => {
     if (!guide) return; const sub = GUIDE[guide.step].subs[guide.sub]; if (!sub?.show) return;
     if (sub.show.patch) update(sub.show.patch);
@@ -326,13 +340,13 @@ export default function App() {
     <main className="workspace wide">
       {error && <div role="alert" className="notice bad">{error}<button aria-label="Dismiss" onClick={() => setError('')}><X size={15}/></button></div>}
       {notice && <div role="status" className="notice good">{notice}</div>}
-      {stale && <div role="status" className="notice warn">Inputs changed since this run. Run again to update the results.</div>}
+      {stale && !guide && <div role="status" className="notice warn">Inputs changed since this run. Run again to update the results.</div>}
 
 
       {/* One canvas: scenario and policy in the left dock, analyses on the canvas and in the right dock, results below. */}
       {tour && <TourBar step={tour.step} go={goTour} exit={() => setTour(null)} busy={busy}/>}
       {guide && <GuideBar step={guide.step} go={goGuide} exit={() => setGuide(null)} busy={busy}/>}
-      <div><ModelMap forceChips={(() => { const t = guide ? GUIDE[guide.step].subs[guide.sub]?.target ?? '' : ''; return { ctrl: /chip-(subsidy|controller)/.test(t), market: /chip-(income|shocks|bank)/.test(t) }; })()} guideCmd={gcmd} onSnap={setSnap} tour={guide && g ? { n: 1000 + guide.n, guide: true, pins: g.pins, cbs: g.cbs, compare: true, compareLabel: g.compareOpen ? 'no rule, historical subsidies (grey dashed)' : 'previous run (grey dashed)', rejectSize: g.rejectSize, robust: g.zn } : tour ? { n: tour.n, pins: TOUR[tour.step].pins, ident: TOUR[tour.step].ident, tuning: TOUR[tour.step].tuning, compare: TOUR[tour.step].compare, cbs: TOUR[tour.step].cbs, expand: TOUR[tour.step].expand, formulas: TOUR[tour.step].formulas, reject: TOUR[tour.step].reject, robust: TOUR[tour.step].robust } : undefined} scenario={s} result={result} pinned={pinned} shockShow={slideW ? shockRun : null} zn={guide ? (g?.zn ? znRun : null) : tour && TOUR[tour.step].robust ? znRun : null} busy={busy} run={simulate} setFeedback={feedback => update({ feedback })} update={update} design={design} setDesign={setDesign} cbs={cbs} lag={lag ?? cbs?.lag_months ?? 0} cpb={cpbShown}
+      <div><ModelMap forceChips={(() => { const t = guide ? GUIDE[guide.step].subs.map(x => x.target ?? '').join(' ') : ''; return { ctrl: /chip-(subsidy|controller)/.test(t), market: /chip-(income|shocks|bank)/.test(t) }; })()} guideCmd={gcmd} onSnap={setSnap} tour={guide && g ? { n: 1000 + guide.n, guide: true, pins: g.pins, cbs: g.cbs, compare: !!(g.compare || g.compareOpen), compareLabel: g.compareOpen ? 'no rule, historical subsidies (grey dashed)' : 'previous run (grey dashed)', rejectSize: g.rejectSize, robust: g.zn, robustOnly: g.robustOnly } : tour ? { n: tour.n, pins: TOUR[tour.step].pins, ident: TOUR[tour.step].ident, tuning: TOUR[tour.step].tuning, compare: TOUR[tour.step].compare, cbs: TOUR[tour.step].cbs, expand: TOUR[tour.step].expand, formulas: TOUR[tour.step].formulas, reject: TOUR[tour.step].reject, robust: TOUR[tour.step].robust } : undefined} scenario={s} result={result} pinned={pinned} shockShow={slideW ? shockRun : null} zn={guide ? (g?.zn ? znRun : null) : tour && TOUR[tour.step].robust ? znRun : null} busy={busy} run={guide ? guideRun : simulate} stale={stale} setFeedback={feedback => update({ feedback })} update={update} design={design} setDesign={setDesign} cbs={cbs} lag={lag ?? cbs?.lag_months ?? 0} cpb={cpbShown}
         left={<><div className="left-head"><div><p className="eyebrow">Disturbances d</p><h3>Economic scenario</h3></div><button className="ghost small" title="Back to the start values: every slider, switch, controller and model parameter" onClick={() => update({ ...catalogue.defaults, name: s.name })}><RotateCcw size={14}/> Reset all</button></div><p className="muted small">Scales of the historical inputs; 1.00 is the netlist path. Click a group to open it. A dot marks a group that differs from the start values. Run again to see the effect.</p>{scenarioControls}<hr/><p className="eyebrow">Reference r and controller</p><h3>Policy</h3>{policyControls}<button className="primary" disabled={busy} onClick={simulate}><Play size={15}/> Run simulation</button></>}/></div>
 
 

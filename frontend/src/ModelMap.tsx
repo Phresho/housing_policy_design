@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { BaseEdge, Controls, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow, useStore, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Activity, Camera, Sigma, ShieldCheck, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, LoaderCircle, Maximize2, Minus, Pause, Play, Plus } from 'lucide-react';
+import { Activity, BarChart3, Camera, Coins, Home, Landmark, Sigma, ShieldCheck, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, LoaderCircle, Maximize2, Minus, Pause, Play, Plus } from 'lucide-react';
 import { savePng } from './shot';
 import { IdentPanel } from './Ident';
 import { api } from './api';
@@ -92,7 +92,7 @@ function assignLanes(wires: Wire[], channels: Record<string, [number, number]>) 
 }
 
 // ---------- nodes
-type BlockData = { label: string; sub?: string; tone: string; width: number; height: number; selected?: boolean; children?: React.ReactNode; toggle?: () => void; open?: boolean; tab?: 'tl' | 'br' | 'bl' | 'above'; headSpace?: number; scale?: number; resize?: (scale: number) => void };
+type BlockData = { icon?: React.ReactNode; label: string; sub?: string; tone: string; width: number; height: number; selected?: boolean; children?: React.ReactNode; toggle?: () => void; open?: boolean; tab?: 'tl' | 'br' | 'bl' | 'above'; headSpace?: number; scale?: number; resize?: (scale: number) => void };
 // Open CBS block: how the published numbers are made from the two measurements (netlist 19okt):
 //   house price index  = I(Construction_cost) = x1, unscaled;
 //   year-on-year (%)   = (x1(t) - x1(t - 1 yr)) / x1(t - 1 yr) x 100   (B§Year_on_year_change1, delay 6 s = 1 year);
@@ -154,7 +154,7 @@ function Block({ data }: NodeProps<Node<BlockData>>) {
   const button = data.toggle && <button className="toggle nodrag" aria-label={`${data.open ? 'Collapse' : 'Expand'} ${data.label}`} onClick={e => { e.stopPropagation(); data.toggle!(); }}>{data.open ? <Minus size={13}/> : <Plus size={13}/>}</button>;
   return <div className={`map-node ${data.tone}${data.open ? ' open' : ''}${data.selected ? ' selected' : ''}`} style={{ width: data.width, height: data.height }}>
     <Handle type="target" position={Position.Left} className="hidden-handle"/><Handle type="source" position={Position.Right} className="hidden-handle"/>
-    {data.open && data.resize && <Grip data={data}/>}{data.open ? data.headSpace ? <div className="open-body" style={{ top: data.headSpace }}>{data.children}</div> : <>{data.children}</> : data.label ? <><div className="block-head"><strong>{data.label.replace('\n', ' ')}</strong>{button}</div><div className="block-body">{data.sub && <span>{data.sub}</span>}{data.children}</div></> : <>{button}{data.children}</>}
+    {data.open && data.resize && <Grip data={data}/>}{data.open ? data.headSpace ? <div className="open-body" style={{ top: data.headSpace }}>{data.children}</div> : <>{data.children}</> : data.label ? <><div className="block-head"><strong>{data.label.replace('\n', ' ')}</strong>{button}</div><div className="block-body">{data.icon && <span className="block-icon" aria-hidden="true">{data.icon}</span>}{data.sub && <span>{data.sub}</span>}{data.children}</div></> : <>{button}{data.children}</>}
   </div>;
 }
 // ---------- probes: one effort e and one flow f per port (supervisor 3.1-3.3)
@@ -171,7 +171,7 @@ function probeInput(map: MapData, p: Probe): { kind: string; id: string } | null
   if (LOOP_SIGNALS[p.flow]) return null;
   return map.disturbances.some(d => d.id === p.flow) ? { kind: 'signal', id: p.flow } : { kind: 'flow', id: p.flow };
 }
-type ProbeState = { shockShow?: Result | null; compare?: { result: Result; color: string; label: string; align: boolean } | null; compare2?: { result: Result; color: string; label: string } | null; cardSize?: { w: number; h: number }; pins: Probe[]; sensed: Probe[]; unpin: (p: Probe) => void; dock: (p: Probe) => void; muted?: boolean; stepAt?: string; stepLabel?: string; charts: ChartCard[]; bodeFrom: Probe | null; setBodeFrom: (p: Probe | null) => void; addBode: (from: Probe, to: Probe, at: XY) => void; addChart: (c: ChartCard, at: XY) => void; removeChart: (id: string) => void; openSensor: () => void; ctx: Ctx; cbs?: CbsData; lag: number; cpb?: { year: number[]; yoy: number[] }; pos: Record<string, XY>; setPos: (id: string, p: XY) => void; place: (p: Probe, at: XY) => void; sense: (p: Probe) => void; show?: (p: Probe, e: React.MouseEvent) => void };
+type ProbeState = { waiting?: boolean; waitingStep?: boolean; shockShow?: Result | null; compare?: { result: Result; color: string; label: string; align: boolean } | null; compare2?: { result: Result; color: string; label: string } | null; cardSize?: { w: number; h: number }; pins: Probe[]; sensed: Probe[]; unpin: (p: Probe) => void; dock: (p: Probe) => void; muted?: boolean; stepAt?: string; stepLabel?: string; charts: ChartCard[]; bodeFrom: Probe | null; setBodeFrom: (p: Probe | null) => void; addBode: (from: Probe, to: Probe, at: XY) => void; addChart: (c: ChartCard, at?: XY) => void; removeChart: (id: string) => void; openSensor: () => void; ctx: Ctx; cbs?: CbsData; lag: number; cpb?: { year: number[]; yoy: number[] }; pos: Record<string, XY>; setPos: (id: string, p: XY) => void; place: (p: Probe, at: XY) => void; sense: (p: Probe) => void; show?: (p: Probe, e: React.MouseEvent) => void };
 type ProbeActions = { addSens: () => void; hasSens: boolean; pinned: (p: Probe) => boolean; sensed: (p: Probe) => boolean; pin: (p: Probe) => void; sense: (p: Probe) => void; list: Probe[]; count: number; stepInput: string; setStepInput: (id: string) => void };
 const probeKey = (p: Probe) => `${p.flow}:${p.q}`;
 const probeOf = (id: string): Probe => { const [flow, q] = id.split(':'); return { flow, q: q as Probe['q'] }; };
@@ -242,33 +242,36 @@ export type StepData = { input: string; inputId?: string; reject?: boolean; resp
 // can be done on the canvas. Drawn in screen pixels at the block's place, so they stay readable at any zoom.
 // Shown only once their block is clicked (opened or selected), or when the guided tour points at them (Jesse, 11 Nov 2026).
 type ChipCtx = { update: (patch: Partial<Scenario>) => void; stepping: boolean; stepInput: string; setStepInput: (id: string) => void; showCtrl: boolean; showMarket: boolean };
-const subsidyName = (s: Scenario) => s.subsidy_scale === 0 ? 'none' : s.subsidy_path === 'step' ? 'one step' : s.subsidy_path === 'staircase' ? `phase-out, ${s.phase_steps} step${s.phase_steps === 1 ? '' : 's'}` : s.subsidy_scale === 10 ? 'CPB history' : s.subsidy_scale === 1 ? 'historical' : `historical × ${s.subsidy_scale}`;
+const subsidyName = (s: Scenario) => s.subsidy_scale === 0 ? 'none' : s.subsidy_path === 'step' ? 'one step' : s.subsidy_path === 'staircase' ? 'phase-out' : s.subsidy_scale === 10 ? 'CPB history' : s.subsidy_scale === 1 ? 'historical' : `historical × ${s.subsidy_scale}`;
 const incomeName = (s: Scenario) => s.income_path === 'historical' ? 'historical' : s.income_growth_pct === 0 ? 'constant' : `grows ${+s.income_growth_pct.toFixed(2)}% a year`;
 function CanvasChips({ nodes, scenario: s, chips, map }: { nodes: Node[]; scenario: Scenario; chips: ChipCtx; map: MapData }) {
   const [tx, ty, k] = useStore(st => st.transform);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null), layer = useRef<HTMLDivElement>(null);
   useEffect(() => { if (!open) return; const close = () => setOpen(null); window.addEventListener('click', close); return () => window.removeEventListener('click', close); }, [open]);
   const rect = (id: string) => { const n = nodes.find(x => x.id === id); return n ? { x: n.position.x, y: n.position.y, w: (n.data as BlockData).width, h: (n.data as BlockData).height } : null; };
   const scr = (x: number, y: number) => ({ left: x * k + tx, top: y * k + ty });
   const ctrl = chips.showCtrl ? rect('controller') : null, sys = chips.showMarket ? rect('system') : null;
-  const menu = (id: string, label: string, value: string, body: React.ReactNode) => <div className="chip-wrap" data-guide={`chip-${id}`}>
-    <button className={'chip' + (open === id ? ' on' : '')} aria-expanded={open === id} onClick={e => { e.stopPropagation(); setOpen(o => o === id ? null : id); }}>{label}: <b>{value}</b> <ChevronDown size={13}/></button>
-    {open === id && <div className="chip-menu" role="menu" onClick={e => e.stopPropagation()}>{body}</div>}</div>;
-  const opt = (label: string, active: boolean, act: () => void, note?: string, keep?: boolean) => <button role="menuitemradio" aria-checked={active} className={'chip-opt' + (active ? ' on' : '')} onClick={() => { act(); if (!keep) setOpen(null); }}><span>{label}</span>{note && <small>{note}</small>}</button>;
+  // a picker in the lower half of the canvas opens its menu upwards, so it stays on screen
+  const upAt = (y: number) => y > (layer.current?.clientHeight ?? 800) * 0.45;
+  const menu = (id: string, label: string, value: string, body: React.ReactNode, y: number, extra?: React.ReactNode) => <div className="chip-wrap" data-guide={`chip-${id}`}>
+    <button className={'chip' + (open === id ? ' on' : '')} aria-expanded={open === id} onClick={e => { e.stopPropagation(); setOpen(o => o === id ? null : id); }}>{label}: <b>{value}</b> <ChevronDown size={13}/></button>{extra}
+    {open === id && <div className={'chip-menu' + (upAt(y) ? ' up' : '')} role="menu" onClick={e => e.stopPropagation()}>{body}</div>}</div>;
+  const opt = (label: string, active: boolean, act: () => void, note?: string, keep?: boolean) => <button role="menuitemradio" aria-checked={active} data-opt={label} className={'chip-opt' + (active ? ' on' : '')} onClick={() => { act(); if (!keep) setOpen(null); }}><span>{label}</span>{note && <small>{note}</small>}</button>;
   const set = (patch: Partial<Scenario>) => () => chips.update(patch);
   const stair = s.subsidy_path === 'staircase' && s.subsidy_scale > 0, shocksOn = s.crisis_scale > 0 || s.covid_scale > 0;
-  const stepList = [...map.disturbances.map(d => ({ id: d.id, label: d.label })), ...(s.feedback ? [{ id: 'y_reference', label: 'Target r (Parliament)' }] : [])];
-  return <div className="chip-layer">
+  // the lending crisis shock gives no response in the linear model (all plots flat), so it is not offered as a step
+  const stepList = [...map.disturbances.filter(d => d.id !== 'd_loans').map(d => ({ id: d.id, label: d.label })), ...(s.feedback ? [{ id: 'y_reference', label: 'Target r (Parliament)' }] : [])];
+  const ctrlY = ctrl ? (ctrl.y + ctrl.h) * k + ty : 0, sysY = sys ? (sys.y + sys.h) * k + ty : 0;
+  return <div className="chip-layer" ref={layer}>
     {ctrl && <div className="chip-row" style={{ ...scr(ctrl.x + ctrl.w / 2, ctrl.y + ctrl.h), transform: 'translate(-50%, 10px)' }}>
       {!s.feedback ? menu('subsidy', 'Subsidy path', subsidyName(s), <>
         {opt('None', s.subsidy_scale === 0, set(NO_SUBSIDY), 'no owner-occupied subsidy')}
         {opt('One step', s.subsidy_path === 'step' && s.subsidy_scale > 0, set(ONE_STEP), 'from 0 to 20 in 2005')}
         {opt('Phase-out', stair, set(PHASE(stair ? s.phase_steps : 20)), '30 removed 2005–2015, in equal steps', true)}
-        {stair && <label className="chip-slider">Steps <output>{s.phase_steps}</output><input type="range" min={1} max={20} step={1} value={s.phase_steps} aria-label="Number of phase-out steps" onChange={e => chips.update({ phase_steps: Number(e.target.value) })}/></label>}
         {opt('Historical', s.subsidy_path === 'historical' && s.subsidy_scale === 1, set({ subsidy_path: 'historical', subsidy_scale: 1 }), 'the netlist path')}
         {opt('CPB history', s.subsidy_path === 'historical' && s.subsidy_scale === 10, set(CPB_PEAKS), 'historical × 10, income fitted to the CPB peaks; bank and shocks off')}
-      </>) : <div className="chip-wrap" data-guide="chip-controller"><div className="chip seg" role="group" aria-label="Rule"><span>Rule</span>
-        {(['zn', 'hinf'] as const).map(c => <button key={c} className={s.controller === c ? 'on' : ''} aria-pressed={s.controller === c} onClick={e => { e.stopPropagation(); chips.update({ controller: c }); }}>{c === 'zn' ? 'Ziegler–Nichols' : 'H∞'}</button>)}
+      </>, ctrlY, stair && <label className="chip chip-slider" data-opt="steps" onClick={e => e.stopPropagation()}>Steps <output>{s.phase_steps}</output><input type="range" min={1} max={20} step={1} value={s.phase_steps} aria-label="Number of phase-out steps" onChange={e => chips.update({ phase_steps: Number(e.target.value) })}/></label>) : <div className="chip-wrap" data-guide="chip-controller"><div className="chip seg" role="group" aria-label="Rule"><span>Rule</span>
+        {(['zn', 'hinf'] as const).map(c => <button key={c} data-opt={c} className={s.controller === c ? 'on' : ''} aria-pressed={s.controller === c} onClick={e => { e.stopPropagation(); chips.update({ controller: c }); }}>{c === 'zn' ? 'Ziegler–Nichols' : 'H∞'}</button>)}
         {s.controller !== 'zn' && s.controller !== 'hinf' && <em>custom</em>}</div></div>}
     </div>}
     {sys && <div className="chip-row" style={{ ...scr(sys.x, sys.y + sys.h), transform: 'translate(0, 10px)' }}>
@@ -276,12 +279,12 @@ function CanvasChips({ nodes, scenario: s, chips, map }: { nodes: Node[]; scenar
         {opt('Constant', s.income_path === 'stable' && s.income_growth_pct === 0, set(FLAT))}
         {opt('Grows 2% a year', s.income_path === 'stable' && s.income_growth_pct === 2, set(GROWTH), 'from 80 in 1996')}
         {opt('Historical', s.income_path === 'historical', set({ income_path: 'historical', income_scale: 1 }), 'the netlist path')}
-      </>)}
-      {chips.stepping ? menu('shocks', 'Step in', stepList.find(d => d.id === chips.stepInput)?.label ?? chips.stepInput, <>{stepList.map(d => <span key={d.id}>{opt(d.label, chips.stepInput === d.id, () => chips.setStepInput(d.id))}</span>)}</>)
+      </>, sysY)}
+      {chips.stepping ? menu('shocks', 'Step in', stepList.find(d => d.id === chips.stepInput)?.label ?? chips.stepInput, <>{stepList.map(d => <span key={d.id} data-opt={d.id}>{opt(d.label, chips.stepInput === d.id, () => chips.setStepInput(d.id))}</span>)}</>, sysY)
         : menu('shocks', 'Shocks', shocksOn ? 'historical' : 'none', <>
           {opt('None', !shocksOn, set(NO_SHOCKS), 'no crisis, no Covid')}
           {opt('Historical', shocksOn && s.mortgage_scale === SHOCKS_CBS.mortgage_scale, set(SHOCKS_CBS), 'crisis, Covid, interest, mortgages, income: every input fitted to CBS, bank on')}
-        </>)}
+        </>, sysY)}
       <div className="chip-wrap" data-guide="chip-bank"><button className={'chip' + (s.bank ? ' on' : '')} aria-pressed={s.bank} onClick={e => { e.stopPropagation(); chips.update({ bank: !s.bank }); }}>Bank: <b>{s.bank ? 'on' : 'off'}</b></button></div>
     </div>}
   </div>;
@@ -289,6 +292,8 @@ function CanvasChips({ nodes, scenario: s, chips, map }: { nodes: Node[]; scenar
 function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { map: MapData; probes: ProbeState; result: Result | null; at: number; fallback: Record<string, XY>; steps?: StepData; lines?: Record<string, Point[]> }) {
   const [tx, ty, k] = useStore(s => s.transform);
   const [live, setLive] = useState<{ id: string; x: number; y: number } | null>(null);
+  // the card last clicked or dragged lies on top; the outputs (price, year-on-year) lie above the other plots
+  const [front, setFront] = useState('');
   const [size, setSize] = useState<Record<string, { w: number; h: number }>>({});  // card sizes in model units, kept while the canvas lives
   const resize = (id: string, start: { w: number; h: number }) => (e: React.PointerEvent) => {
     e.stopPropagation(); e.preventDefault(); const el = e.currentTarget as HTMLElement; el.setPointerCapture(e.pointerId);
@@ -324,12 +329,14 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
     const S = sz(id, c.kind), bw = S.w - 16, D = DEFAULT[c.kind], f = Math.max(1, Math.min(S.w / D.w, S.h / D.h));
     return <div key={id} className={'pin-card chart-card ' + c.kind} style={{ left: pos.x, top: pos.y, width: S.w, height: S.h, ['--s' as string]: f }} onPointerDown={drag(id, base)}>{handle(id, c.kind)}
       <div className="pin-head"><strong title={title}>{title}</strong>{c.kind === 'cbs' && <PinTools><button aria-label="Send to the dock" title="Open the CBS sensor in the dock" onClick={probes.openSensor}>⇥</button></PinTools>}<button className="pin-close" aria-label="Remove from the canvas" title="Remove from the canvas" onClick={() => probes.removeChart(id)}>×</button></div>
-      {c.kind === 'cbs' && steps ? (() => {
+      {c.kind === 'cbs' && steps && probes.waitingStep ? <small className="muted waiting">Press ▶ to show the response.</small>
+      : c.kind === 'cbs' && steps ? (() => {
           if (!pr?.t || !pr.y || !p0) return <small className="muted">{pr?.error ?? 'Computing…'}</small>;
           const [k0] = stepSize(steps), y1 = yoyStep(pr.t, pr.y.map(v => v * k0), p0), po = steps.open?.[PRICE_KEY];
           const g = po?.t && po.y && po.y.length === pr.y.length ? yoyStep(po.t, po.y.map(v => v * k0), p0) : undefined;
           const frac = result && result.year.length > 1 ? at / (result.year.length - 1) : 1, i1 = frac < 1 ? Math.round(frac * (y1.length - 1)) : undefined;
           return <><MiniPlot y={y1} at={i1} label={i1 !== undefined ? `${(frac * pr.t[pr.t.length - 1]).toFixed(1)} yr` : undefined} color="#3f9a1f" w={bw} h={S.h - 64 * f} k={f} ghost={g} ghostColor="#8a9692"/><small>Change in the year-on-year rate after the step, percentage points, {pr.t[pr.t.length - 1].toFixed(0)} years.{g ? ' Grey dashed: without the controller.' : ''}</small></>; })()
+      : c.kind === 'cbs' && probes.waiting ? <small className="muted waiting">New settings: press ▶ to run them.</small>
       : c.kind === 'cbs' ? <><YoyBody at={at} color={probes.muted ? MUTED : undefined} k={f} w={bw} h={S.h - 64 * f} year={result?.year} model={result?.scenario.inflation_pct ? result.series.yoy.map(v => v + result.scenario.inflation_pct) : result?.series.yoy} cbs={probes.cbs} lag={probes.lag} cpb={probes.cpb} ghost={probes.compare && !probes.compare.align && probes.compare.result.series.yoy ? probes.compare.result.series.yoy.map(v => v + (probes.compare!.result.scenario.inflation_pct ?? 0)) : undefined} ghost2={probes.compare2?.result.series.yoy ? probes.compare2.result.series.yoy.map(v => v + (probes.compare2!.result.scenario.inflation_pct ?? 0)) : undefined}/><small>Green: model run{probes.compare && !probes.compare.align ? `, ${probes.compare.label}` : ''}{probes.compare2 ? ', green dotted: Ziegler–Nichols PID' : ''}{result ? '' : ' (run the simulation)'}.{probes.cpb ? ' Green dashed: CPB model.' : ''} Grey: CBS index, moved {probes.lag} month{Math.abs(probes.lag) === 1 ? '' : 's'}. % a year.</small></>
       : c.kind === 'sens' ? <SensBody k={f} w={bw} h={S.h - 100 * f} K={probes.ctx.K} filtered={probes.ctx.filtered} settling={probes.ctx.settling} overshoot={probes.ctx.overshoot}/>
         : <BodeBody k={f} w={bw} h={S.h - 74 * f} input={probeInput(map, c.from)!} output={probeInfo(map, c.to).step!} feedback={probes.ctx.feedback} K={probes.ctx.K} filtered={probes.ctx.filtered}/>}</div>;
@@ -362,7 +369,7 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
     // Step response with Play: the year slider's progress runs the step through its own 15 years (no marker at the end)
     const frac = result && result.year.length > 1 ? at / (result.year.length - 1) : 1, tStep = Object.values(steps?.responses ?? {}).find(r => r.t)?.t;
     const sAt = (n: number) => frac < 1 ? Math.round(frac * (n - 1)) : undefined, sLab = (i?: number) => i !== undefined && tStep ? `${(frac * tStep[tStep.length - 1]).toFixed(1)} yr` : undefined;
-    return <div key={id} className={'pin-card' + (steps ? ' step-mode' : '')} style={{ left: pos.x, top: pos.y, width: S.w, height: S.h, ['--s' as string]: f }} onPointerDown={drag(id, base)}>{handle(id, 'probe')}
+    return <div key={id} data-pin={probeKey(p)} className={'pin-card' + (steps ? ' step-mode' : '')} style={{ left: pos.x, top: pos.y, width: S.w, height: S.h, ['--s' as string]: f, zIndex: front === id ? 3 : p.flow === 'y_yoy' || p.flow === 'y_price' ? 2 : 1 }} onPointerDownCapture={() => setFront(id)} onPointerDown={drag(id, base)}>{handle(id, 'probe')}
       <div className="pin-head"><strong title={info.title}>{steps ? `${info.f.label} · step response` : info.title}</strong><PinTools keepOpen={!!probes.bodeFrom}>
         {(() => { const from = probes.bodeFrom, isFrom = !!from && probeKey(from) === probeKey(p), canIn = !!probeInput(map, p);
           return from ? <button className={isFrom ? 'on' : 'bode-ready'} title={isFrom ? 'Cancel the Bode plot' : 'Bode plot from the marked input to this signal'} aria-label={isFrom ? 'Cancel Bode' : 'Bode to here'}
@@ -371,7 +378,9 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
         <button className={sent ? 'on' : ''} aria-label={sent ? 'Stop sending to CBS' : 'Send to CBS'} title={sent ? 'Stop sending to CBS' : 'Send to CBS'} onClick={() => probes.sense(p)}>→CBS</button>
         <button aria-label="Send to the dock" title="Send to the dock" onClick={() => probes.dock(p)}>⇥</button>
         </PinTools><button className="pin-close" aria-label="Remove from the canvas" title="Remove from the canvas" onClick={() => probes.unpin(p)}>×</button></div>
-      {steps && p.flow === steps.inputId && p.q === 's' ? (() => {
+      {probes.waitingStep && steps ? <small className="muted waiting">Press ▶ to show the response.</small>
+      : probes.waiting && !steps ? <small className="muted waiting">New settings: press ▶ to run them.</small>
+      : steps && p.flow === steps.inputId && p.q === 's' ? (() => {
           const [k0, unit] = stepSize(steps), tt = Object.values(steps.responses).find(r => r.t)?.t;
           if (!tt) return <small className="muted">Computing…</small>;
           const y0 = tt.map(t => t < 0 ? 0 : k0);
@@ -396,7 +405,8 @@ function PinLayer({ map, probes, result, at, fallback, steps, lines = {} }: { ma
           // inputs (disturbances, the target r) and the gap e have no open-loop counterpart: no comparison line on their cards
           const cmp = p.flow.startsWith('d_') || p.flow === 'y_reference' || p.flow === 'y_error' ? null : probes.compare, g0 = cmp && info.signal ? readTrace(cmp.result, info.signal) : undefined;
           const g = g0 && g0.length === y.length ? (cmp!.align ? g0.map(v => v - g0[0] + y[0]) : g0) : undefined;
-          const c2 = cmp ? probes.compare2 : null, g2r = c2 && info.signal ? readTrace(c2.result, info.signal) : undefined, g2 = g2r && g2r.length === y.length ? g2r : undefined;
+          const c2 = cmp && !(p.flow === 'owner_subsidy' && probes.cardSize === GUIDE_CARD) ? probes.compare2 : null,  // guided tour: no ZN dots on the subsidy card
+          g2r = c2 && info.signal ? readTrace(c2.result, info.signal) : undefined, g2 = g2r && g2r.length === y.length ? g2r : undefined;
           if (p.flow === 'y_yoy' && p.q === 's') {
             // year-on-year: the CBS index as grey bars behind it, as in the CBS card (model + inflation for the nominal index)
             const infl = result!.scenario.inflation_pct ?? 0, gy = cmp && cmp.result.series.yoy ? cmp.result.series.yoy.map(v => v + infl) : undefined, gz = c2 && c2.result.series.yoy ? c2.result.series.yoy.map(v => v + infl) : undefined;
@@ -495,7 +505,7 @@ const edgeTypes = { rail: Rail, signal: Signal };
 
 const TAB: Record<string, 'tl' | 'br' | 'bl'> = { households: 'br', investors: 'br', firms: 'br', bank: 'br', constructors: 'bl' };
 
-const STEP = 1.5; // one click = 1.5 times stronger or weaker (Jesse, 12 Nov 2026: 10% a click changed too little)
+const STEP = 1.2; // one click = 20% stronger or weaker (Jesse, 11 Nov 2026: 10% changed too little, ×1.5 went unstable at once)
 export const stepPatch = (scenario: Scenario, k: GainKey, up: boolean): Partial<Scenario> => {
   const v = +(scenario[k] * (up ? STEP : 1 / STEP)).toFixed(3), min = k === 'ki' ? 0.01 : 0;
   return k.startsWith('s') ? { [k]: Math.max(min, v) } : { controller: 'custom', [k]: Math.max(min, v) };
@@ -504,14 +514,14 @@ function GainSteps({ scenario, update, auto }: { scenario: Scenario; update: (pa
   const step = (k: GainKey, up: boolean) => update(stepPatch(scenario, k, up));
   const row = (k: GainKey, name: string) => <div className="gain-step" key={k}><span>{name}</span><output>{scenario[k].toFixed(3)}</output>
     <button className="ghost" aria-label={`${name} down`} onClick={() => step(k, false)}><ChevronDown size={14}/></button><button className="ghost" aria-label={`${name} up`} onClick={() => step(k, true)}><ChevronUp size={14}/></button></div>;
-  return <><h4>{scenario.share_control && scenario.feedback ? 'Price PID gains' : 'PID gains'} <small className="muted">model units, × or ÷ 1.5 a click</small></h4>
+  return <><h4>{scenario.share_control && scenario.feedback ? 'Price PID gains' : 'PID gains'} <small className="muted">model units, ±20% a click</small></h4>
     {row('kp', 'Kp')}{row('ki', 'Ki')}{row('kd', 'Kd')}
     <label className="check"><input type="checkbox" checked={scenario.derivative_filter} onChange={e => update({ controller: 'custom', derivative_filter: e.target.checked })}/> Derivative filter (cycle of 0.5 years)</label>
     {scenario.share_control && scenario.feedback && <><h4>Rental-share PID gains</h4>{row('skp', 'Kp')}{row('ski', 'Ki')}{row('skd', 'Kd')}</>}
     {!scenario.feedback && <p className="muted small">The gains act once the loop switch is closed.</p>}
     <p className="muted small">A step sets the price PID to Custom. {auto ? 'The canvas runs again at once.' : 'Run again to see the effect.'}</p></>;
 }
-function Inspector({ map, selection, pick, result, pinned, scenario, enter, layer, tf, setTf, update, probes, design, setDesign, onPreview, auto, reject }: { onPreview?: (scale: Record<string, number> | null) => void; auto?: boolean; reject?: boolean; map: MapData; selection: Selection; pick: (s: Selection) => void; result: Result | null; pinned: Result | null; scenario: Scenario; enter: (id: string) => void; layer: string; tf: TfPicks; setTf: (t: TfPicks) => void; update?: (patch: Partial<Scenario>) => void; probes?: ProbeActions; design?: Design; setDesign?: (d: Design) => void }) {
+function Inspector({ map, selection, pick, result, pinned, scenario, enter, layer, tf, setTf, update, probes, design, setDesign, onPreview, auto, reject, robustOnly }: { robustOnly?: boolean; onPreview?: (scale: Record<string, number> | null) => void; auto?: boolean; reject?: boolean; map: MapData; selection: Selection; pick: (s: Selection) => void; result: Result | null; pinned: Result | null; scenario: Scenario; enter: (id: string) => void; layer: string; tf: TfPicks; setTf: (t: TfPicks) => void; update?: (patch: Partial<Scenario>) => void; probes?: ProbeActions; design?: Design; setDesign?: (d: Design) => void }) {
   const lines = (signal: string, name: string, color: string): Line[] => {
     if (!result) return [];
     const own = readTrace(result, signal), other = pinned && readTrace(pinned, signal);
@@ -520,7 +530,7 @@ function Inspector({ map, selection, pick, result, pinned, scenario, enter, laye
   const hint = (what: string) => <p className="run-hint">Run the simulation to see {what}.</p>;
   const name = (id: string) => id === 'controller' ? 'Controller' : map.agents[id]?.label ?? id;
   const go = (id: string) => pick({ kind: 'agent', id });
-  if (selection.kind === 'robust') return design ? <><Robustness design={{ ...design, K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter }} docked/>{scenario.feedback && <section className="panel"><NyquistPanel K={[scenario.kp, scenario.ki, scenario.kd]} filtered={scenario.derivative_filter}/></section>}</> : null;
+  if (selection.kind === 'robust') return design ? <><Robustness design={{ ...design, K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter }} docked only={robustOnly}/>{scenario.feedback && <section className="panel"><NyquistPanel K={[scenario.kp, scenario.ki, scenario.kd]} filtered={scenario.derivative_filter}/></section>}</> : null;
   if (selection.kind === 'ident') return <IdentPanel scenario={scenario} update={update ?? (() => undefined)} onPreview={onPreview} auto={auto}/>;
   if (selection.kind === 'tf') return <TransferPanel input={tf.input} output={tf.output} feedback={scenario.feedback} K={[scenario.kp, scenario.ki, scenario.kd]} filtered={scenario.derivative_filter} swap={() => setTf({ input: tf.output, output: tf.input })} clear={() => setTf({})}/>;
   if (selection.kind === 'probe') {
@@ -590,7 +600,7 @@ function Inspector({ map, selection, pick, result, pinned, scenario, enter, laye
       {update && <GainSteps scenario={scenario} update={update} auto={auto}/>}
       {probes && (!auto || reject) && <div className="step-pick"><h4>{reject ? 'Disturbance rejection: shock in' : 'Step responses on the canvas'}</h4>
         <label>Pinned plots show the response to a unit step in <select value={probes.stepInput} onChange={e => probes.setStepInput(e.target.value)}>
-          {scenario.feedback && <option value="y_reference">the target r</option>}<option value="u_open">the controller output u, loop open</option>{map.disturbances.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}</select></label>
+          {scenario.feedback && <option value="y_reference">the target r</option>}<option value="u_open">the controller output u, loop open</option>{map.disturbances.filter(d => d.id !== 'd_loans').map(d => <option key={d.id} value={d.id}>{d.label}</option>)}</select></label>
         <p className="muted small">{probes.count ? `${probes.count} pinned plot${probes.count > 1 ? 's' : ''} switch to the step response while the controller is selected. Linear model, 15 years${probes.stepInput === 'u_open' ? ', loop open: the market on its own' : scenario.feedback ? ', loop closed' : ', loop open'}.` : 'Click a port, a disturbance or a subsidy arrow to pin a plot; it shows the step response here while you tune.'}</p></div>}
       {probes && <button className="secondary sens-pin" onClick={probes.addSens}>{probes.hasSens ? 'Remove S, T, KS from the canvas' : 'Pin S, T, KS on the canvas'}</button>}
       {update && design && setDesign && <ControllerLocus K={[scenario.kp, scenario.ki, scenario.kd]} filtered={scenario.derivative_filter} design={design} setDesign={setDesign}
@@ -763,14 +773,14 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
     const xIn = view.cbs ? { a: sensor.y + cbsHead + CBS_Y.x1 * cbsS - gc, b: sensor.y + cbsHead + CBS_Y.x2 * cbsS - gc } : { a: -26, b: 26 };
     block('anchor', { x: group.x, y: group.y, w: 1, h: 1 }, { tone: 'anchor' }, 0);
     // Parliament can be removed from the drawing (right-click); the summing junction then shows only the feedback.
-    if (!view.noParliament) block('parliament', parl, { label: 'Parliament', tone: scenario.feedback ? 'reference' : 'reference loop-off', selected: on({ kind: 'signal', id: 'y_reference' }) });
+    if (!view.noParliament) block('parliament', parl, { icon: <Landmark/>, label: 'Parliament', tone: scenario.feedback ? 'reference' : 'reference loop-off', selected: on({ kind: 'signal', id: 'y_reference' }) });
     block('sum', sum, { tone: scenario.feedback ? 'summing' : 'summing loop-off' });
     block('controller', ctrl, view.controller
       ? { label: 'Tax Authority · Controller', tone: 'controller', open: true, tab: 'above', headSpace: ctrlHead, toggle: () => toggle('controller'), scale: view.ctrlScale ?? 1, resize: (v: number) => toggle(`ctrl-scale:${v}`), children: <ControllerCircuit map={map} scenario={scenario} selection={selection} pick={select} step={step}/> }
-      : { label: 'Tax Authority', tone: 'controller', toggle: () => toggle('controller'), selected: on({ kind: 'agent', id: 'controller' }) });
+      : { icon: <Coins/>, label: 'Tax Authority', tone: 'controller', toggle: () => toggle('controller'), selected: on({ kind: 'agent', id: 'controller' }) });
     block('sensor', sensor, view.cbs ? { label: 'CBS · how the index is made', tone: 'sensor-open', open: true, tab: 'above', headSpace: cbsHead, toggle: () => toggle('cbs'), children: <CbsCircuit/> }
-      : { label: 'CBS', tone: 'sensor', selected: selection.kind === 'sensor', toggle: () => toggle('cbs') });
-    if (!view.system) block('system', group, { label: 'Housing Market', tone: 'system-closed', toggle: () => toggle('system') });
+      : { icon: <BarChart3/>, label: 'CBS', tone: 'sensor', selected: selection.kind === 'sensor', toggle: () => toggle('cbs') });
+    if (!view.system) block('system', group, { icon: <Home/>, label: 'Housing Market', tone: 'system-closed', toggle: () => toggle('system') });
     else {
       block('system', group, { label: 'Housing Market', tone: 'system-group', open: true, tab: 'tl', toggle: () => toggle('system') }, 0);
       block('cpb', R.cpb, view.cpb ? { label: 'CPB Four Quadrants', tone: 'sub-group', open: true, tab: 'tl', toggle: () => toggle('cpb') } : { label: 'CPB Four Quadrants', tone: 'sub-closed', toggle: () => toggle('cpb') }, view.cpb ? 1 : 2);
@@ -883,11 +893,27 @@ function useModelGraph(map: MapData | undefined, view: View, toggle: (k: string)
       // Big cards (guided tour): one row under the loop, and an invisible corner so 'Whole model' fits them too.
       const big = probes.cardSize, rowY = group.y + group.h + 200;
       const nCbs = big ? probes.charts.filter(c => c.kind === 'cbs').length : 0;
-      if (big) probes.charts.forEach(c => { if (c.kind === 'cbs') pinDefault[c.id] = { x: parl.x + probes.pins.length * (big.w + 60), y: rowY }; });
-      if (big && probes.pins.length) block('edgeCards', { x: parl.x + probes.pins.length * (big.w + 60) + nCbs * (big.w * 1.3 + 60), y: rowY + big.h + 20, w: 1, h: 1 }, { tone: 'anchor' }, 0);
+      // the CBS year-on-year card above CBS (right of a shock card above the market, if there is one)
+      if (big) probes.charts.forEach(c => { if (c.kind === 'cbs') { const shockRight = probes.pins.some(q => q.flow.startsWith('d_')) ? group.x + group.w / 2 + 60 + big.w + 40 : -Infinity;
+        pinDefault[c.id] = { x: Math.max(sensor.x + sensor.w / 2 - big.w * 0.65, shockRight), y: sensor.y - big.h - 140 }; } });
+      if (big && nCbs) { const p = pinDefault.cbs; if (p) { block('cbsTL', { x: p.x, y: p.y, w: 1, h: 1 }, { tone: 'anchor' }, 0); block('cbsBR', { x: p.x + big.w * 1.3, y: p.y + big.h, w: 1, h: 1 }, { tone: 'anchor' }, 0); } }
       probes.pins.forEach((p, i) => {
         const info = probeInfo(map, p), start = railStart[p.flow], W = big?.w ?? PIN_W, H = big?.h ?? PIN_H;
-        const pos = probes.pos[`pin-${probeKey(p)}`] ?? (big ? { x: parl.x + i * (big.w + 60), y: rowY } : { x: col.x, y: col.y + i * 170 });
+        // big cards: inputs and inner flows from the left under Parliament, the outputs (price, year-on-year) from the
+        // right under CBS, so each plot sits near the line it shows
+        const isOut = (q: Probe) => q.flow === 'y_price' || q.flow === 'y_yoy', outs = probes.pins.filter(isOut), ins = probes.pins.filter(q => !isOut(q));
+        const right = sensor.x + sensor.w + 170 * lab;
+        // near the line it shows: a shock above the market beside its arrow, a subsidy above the Tax Authority,
+        // the outputs under CBS on the right, anything else in the row under the loop
+        const shocks = probes.pins.filter(q => q.flow.startsWith('d_')), isShock = p.flow.startsWith('d_'), isSub = p.flow === 'owner_subsidy' || p.flow === 'rental_subsidy';
+        const others = ins.filter(q => !q.flow.startsWith('d_') && q.flow !== 'owner_subsidy' && q.flow !== 'rental_subsidy');
+        const slot = !big ? { x: col.x, y: col.y + i * 170 }
+          : isOut(p) ? { x: right + 50, y: sensor.y + sensor.h / 2 - big.h / 2 + outs.indexOf(p) * (big.h + 40) }  // right of the output line, at CBS height (not below the open market)
+          : isShock ? (shocks.length > 1 ? { x: group.x + (shocks.indexOf(p) % 3) * (big.w + 30), y: group.y - 140 - (Math.ceil(shocks.length / 3) - Math.floor(shocks.indexOf(p) / 3)) * (big.h + 30) } : { x: group.x + group.w / 2 + 60, y: group.y - big.h - 140 })
+          : isSub ? { x: ctrl.x + (p.flow === 'rental_subsidy' ? big.w + 60 : 0), y: ctrl.y - big.h - 140 }
+          : { x: parl.x + others.indexOf(p) * (big.w + 60), y: rowY };
+        const pos = probes.pos[`pin-${probeKey(p)}`] ?? slot;
+        if (big) { block(`cardTL-${probeKey(p)}`, { x: pos.x, y: pos.y, w: 1, h: 1 }, { tone: 'anchor' }, 0); block(`cardBR-${probeKey(p)}`, { x: pos.x + W, y: pos.y + H, w: 1, h: 1 }, { tone: 'anchor' }, 0); }
         pinDefault[`pin-${probeKey(p)}`] = pos;
       });
       probes.sensed.forEach((p, i) => {
@@ -928,7 +954,8 @@ function Canvas({ hl, setHl, map, view, setView, scenario, result, at, selection
     // A block that just opened may not be measured yet; fitView on it then does nothing (returns false), so retry.
     let t = 0, tries = 0, live = true;
     const go = async () => {
-      const ok = id ? await flow.fitView({ nodes: [{ id }], duration: 600, padding: .12 }) : await flow.fitView({ duration: 600, padding: .04 });
+      // the opened controller: zoom in less, so the loop around it stays in view (Jesse, 11 Nov 2026)
+      const ok = id ? await flow.fitView({ nodes: id === 'cbs-card' ? [{ id: 'cbsTL' }, { id: 'cbsBR' }] : id.startsWith('card:') ? [{ id: `cardTL-${id.slice(5)}` }, { id: `cardBR-${id.slice(5)}` }] : [{ id }], duration: 600, padding: id === 'controller' ? .9 : id === 'cbs-card' || id.startsWith('card:') ? .45 : .12 }) : await flow.fitView({ duration: 600, padding: .04 });
       if (live && !ok && ++tries < 12) t = window.setTimeout(go, 150);
     };
     t = window.setTimeout(go, 40);
@@ -938,7 +965,7 @@ function Canvas({ hl, setHl, map, view, setView, scenario, result, at, selection
     onNodeContextMenu={(e, n) => { if (n.id === 'parliament' || n.id === 'sum') { e.preventDefault(); menu({ kind: 'agent', id: n.id }, e); } }}
     onNodeClick={(_, n) => {
       if (n.id === 'sensor' && view.cbs) return;
-      if (n.id === 'sensor') { const at = flow.screenToFlowPosition({ x: _.clientX, y: _.clientY }); probes.addChart({ id: 'cbs', kind: 'cbs' }, { x: at.x - 190, y: at.y - 230 }); }
+      if (n.id === 'sensor') { const at = flow.screenToFlowPosition({ x: _.clientX, y: _.clientY }); probes.addChart({ id: 'cbs', kind: 'cbs' }, probes.cardSize ? undefined : { x: at.x - 190, y: at.y - 230 }); }  // tours: the card's own place above CBS
       else if (n.id === 'parliament') select({ kind: 'signal', id: 'y_reference' });
       else if (n.id === 'sum') select({ kind: 'signal', id: 'y_error' });
       else if (n.id === 'controller') { select({ kind: 'agent', id: 'controller' }); if (!view.controller) toggle('controller'); }
@@ -947,11 +974,12 @@ function Canvas({ hl, setHl, map, view, setView, scenario, result, at, selection
     }}><Controls showInteractive={false}/><StickyHeaders nodes={graph.nodes as Node<BlockData>[]} lab={lab}/><PinLayer map={map} probes={withShow} result={result} at={at} fallback={graph.pinDefault} steps={steps} lines={graph.lines}/>{chips && <CanvasChips nodes={graph.nodes} scenario={scenario} chips={chips} map={map}/>}</ReactFlow></AtContext.Provider>;
 }
 
-const TOUR_CARD = { w: 700, h: 400 };  // plot cards in the guided tour, model units (readable at the whole-model zoom)
+const TOUR_CARD = { w: 700, h: 400 };
+const GUIDE_CARD = { w: 380, h: 220 };  // guided tour: smaller plot cards, so they cover less of the circuit (Jesse, 11 Nov 2026)  // plot cards in the guided tour, model units (readable at the whole-model zoom)
 const CLOSED: View = { system: false, cpb: false, finance: false, controller: false, agents: [] };
 type TfPicks = { input?: Pick; output?: Pick };
 type MenuState = { x: number; y: number; target: Selection; label: string };
-export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, setFeedback, update, design, setDesign, cbs, lag, left, cpb, tour, guideCmd, onSnap, forceChips }: { forceChips?: { ctrl?: boolean; market?: boolean }; guideCmd?: GuideCmd; onSnap?: (s: Snap) => void; tour?: { n: number; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean; formulas?: boolean; reject?: string; robust?: boolean; guide?: boolean; compareLabel?: string; rejectSize?: boolean }; scenario: Scenario; result: Result | null; pinned: Result | null; zn?: Result | null; shockShow?: Result | null; busy: boolean; run: () => void; setFeedback: (on: boolean) => void; update: (patch: Partial<Scenario>) => void; design: Design; setDesign: (d: Design) => void; cbs?: CbsData; lag: number; left?: React.ReactNode; cpb?: { year: number[]; yoy: number[] } }) {
+export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, stale, setFeedback, update, design, setDesign, cbs, lag, left, cpb, tour, guideCmd, onSnap, forceChips }: { stale?: boolean; forceChips?: { ctrl?: boolean; market?: boolean }; guideCmd?: GuideCmd; onSnap?: (s: Snap) => void; tour?: { n: number; pins: Probe[]; ident?: boolean; tuning?: boolean; compare?: boolean; cbs?: boolean; expand?: boolean; formulas?: boolean; reject?: string; robust?: boolean; guide?: boolean; compareLabel?: string; rejectSize?: boolean; robustOnly?: boolean }; scenario: Scenario; result: Result | null; pinned: Result | null; zn?: Result | null; shockShow?: Result | null; busy: boolean; run: () => void; setFeedback: (on: boolean) => void; update: (patch: Partial<Scenario>) => void; design: Design; setDesign: (d: Design) => void; cbs?: CbsData; lag: number; left?: React.ReactNode; cpb?: { year: number[]; yoy: number[] } }) {
   const [leftOpen, setLeftOpen] = useState(false);  // side panels start closed (Jesse, 10 Nov 2026)
   const [map, setMap] = useState<MapData>();
   const [error, setError] = useState('');
@@ -961,7 +989,7 @@ export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, s
   // A clicked CPB equation lights up the flows and elements it describes (on the blocks or in the side panel).
   const [hl, setHl] = useState<Formula | null>(null);
   useEffect(() => { if (!view.formulas) setHl(null); }, [view.formulas]);
-  const [index, setIndex] = useState<number>(), [played, setPlayed] = useState(false), [showZn, setShowZn] = useState(false), [plays, setPlays] = useState(0);
+  const [index, setIndex] = useState<number>(), [played, setPlayed] = useState(false), [showZn, setShowZn] = useState(false), [plays, setPlays] = useState(0), [stepSeen, setStepSeen] = useState('');
   const [tf, setTf] = useState<TfPicks>({});
   const [menuAt, setMenuAt] = useState<MenuState | null>(null);
   const [dock, setDock] = useState(false);
@@ -1009,11 +1037,17 @@ export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, s
   useEffect(() => {
     if (!guideCmd?.n) return;
     if (guideCmd.view) setView({ ...view, ...guideCmd.view });
-    if (guideCmd.stepInput) setStepInput(guideCmd.stepInput);
+    if (guideCmd.stepInput) pickStep(guideCmd.stepInput);
     if (guideCmd.fit) setFocus(f => ({ id: '', n: f.n + 1 }));
     if (guideCmd.focus) { const id = guideCmd.focus; window.setTimeout(() => setFocus(f => ({ id, n: f.n + 1 })), 700); }
     if (guideCmd.dock !== undefined) setDock(guideCmd.dock);
   }, [guideCmd?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the disturbance arrow opens the side panel with every shock and input
+  useEffect(() => {
+    if (selection.kind !== 'shocks') return;
+    if (tour?.guide && map) setPins(old => [...old, ...map.disturbances.filter(d => !old.some(p => p.flow === d.id)).map(d => ({ flow: d.id, q: 's' as const }))]);
+    else setDock(true);
+  }, [selection.kind]); // eslint-disable-line react-hooks/exhaustive-deps
   const [bodeFrom, setBodeFrom] = useState<Probe | null>(null);
   const ctx = useMemo<Ctx>(() => ({ K: [scenario.kp, scenario.ki, scenario.kd], filtered: scenario.derivative_filter, feedback: scenario.feedback, settling: design.settling, overshoot: design.overshoot }), [scenario.kp, scenario.ki, scenario.kd, scenario.derivative_filter, scenario.feedback, design.settling, design.overshoot]);
   const latest = useRef({ scenario, update }); latest.current = { scenario, update };
@@ -1028,9 +1062,13 @@ export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, s
   useEffect(() => { setPlotMode(tour?.reject ? 'step' : null); }, [tour?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   const ident = selection.kind === 'ident', stepping = plotMode ? plotMode === 'step' : (!tour && (tuning || ident)) || (tourReject && tuning);
   const [stepChoice, setStepInput] = useState('y_reference');
+  // choosing the shock of a step response also plots that shock (its card replaces the previous shock's)
+  const pickStep = (id: string) => { setStepInput(id); if (id.startsWith('d_')) setPins(old => [...old.filter(p => !p.flow.startsWith('d_')), { flow: id, q: 's' }]); };
   // Loop open: the target does nothing, so the default step is the controller output u.
   const stepInput = ident ? 'u_open' : !scenario.feedback && stepChoice === 'y_reference' ? 'u_open' : stepChoice;
   const [steps, setSteps] = useState<StepData>(null);
+  // guided tour: a step response shows only once Play is pressed for this input and these gains
+  const stepKey = `${stepInput}|${scenario.kp}|${scenario.ki}|${scenario.kd}|${scenario.derivative_filter}`;
   useEffect(() => {
     const wantYoy = pins.some(p => p.flow === 'y_yoy') || charts.some(c => c.kind === 'cbs');
     const outs0 = [...pins.map(p => probeInfo(map!, p).step).filter(Boolean), ...(wantYoy ? [{ kind: 'signal', id: 'y_price' } as const] : [])];
@@ -1049,9 +1087,9 @@ export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, s
   const stepGain = useCallback((k: GainKey, up: boolean) => latest.current.update(stepPatch(latest.current.scenario, k, up)), []);
   const same = (a: Probe) => (b: Probe) => a.flow === b.flow && a.q === b.q;
   const toggleIn = (set: React.Dispatch<React.SetStateAction<Probe[]>>) => (p: Probe) => set(old => old.some(same(p)) ? old.filter(x => !same(p)(x)) : [...old, p]);
-  const probeState = useMemo<ProbeState>(() => ({ compare: selection.kind === 'ident' && ghost ? { result: ghost, color: '#2F6FB5', label: 'proposed (blue, same start)', align: true } : tour?.compare && pinned ? { result: pinned, color: '#8a9692', label: tour.compareLabel ?? 'open loop (grey dashed)', align: false } : null, cardSize: tour ? TOUR_CARD : undefined, pins, sensed, unpin: p => setPins(old => old.filter(x => !same(p)(x))), dock: p => { setDock(true); setSelection(p.q === 's' && LOOP_SIGNALS[p.flow] ? LOOP_SIGNALS[p.flow].dock : { kind: 'probe', id: `${p.flow}:${p.q}` }); }, muted: !!result && !played, shockShow, compare2: showZn && zn && tour?.compare ? { result: zn, color: '#7cc96a', label: 'Ziegler–Nichols PID (light green dotted)' } : null, stepAt: stepping ? stepInput : undefined, stepLabel: stepping ? (stepInput === 'd_interest' ? '+1 percentage point' : tourReject && SHOCK_STEP[stepInput] ? SHOCK_STEP[stepInput][1].split(' (')[0] : '+1') : undefined, charts, bodeFrom, setBodeFrom, ctx, removeChart: id => setCharts(old => old.filter(c => c.id !== id)), cbs, lag, cpb, openSensor: () => { setDock(true); setSelection({ kind: 'sensor', id: '' }); },
-    addChart: (c, at) => { setCharts(old => old.some(x => x.id === c.id) ? old : [...old, c]); setPinPos(old => ({ ...old, [c.id]: at })); },
-    addBode: (from, to, at) => { const id = `bode-${probeKey(from)}-${probeKey(to)}`; setCharts(old => old.some(c => c.id === id) ? old : [...old, { id, kind: 'bode', from, to }]); setPinPos(old => ({ ...old, [id]: at })); setBodeFrom(null); }, pos: pinPos, setPos: (id, q) => setPinPos(old => ({ ...old, [id]: q })), place: (p, at) => { setPins(old => old.some(same(p)) ? old : [...old, p]); setPinPos(old => ({ ...old, [`pin-${p.flow}:${p.q}`]: at })); }, sense: toggleIn(setSensed) }), [pins, sensed, pinPos, tuning, stepInput, charts, bodeFrom, ctx, cbs, lag, cpb, !!tour, ghost, selection.kind, tour?.compare, pinned, tourReject, stepping, result, played, zn, showZn, shockShow]);
+  const probeState = useMemo<ProbeState>(() => ({ compare: selection.kind === 'ident' && ghost ? { result: ghost, color: '#2F6FB5', label: 'proposed (blue, same start)', align: true } : tour?.compare && pinned ? { result: pinned, color: '#8a9692', label: tour.compareLabel ?? 'open loop (grey dashed)', align: false } : null, cardSize: tour?.guide ? GUIDE_CARD : tour ? TOUR_CARD : undefined, pins, sensed, unpin: p => setPins(old => old.filter(x => !same(p)(x))), dock: p => { setDock(true); setSelection(p.q === 's' && LOOP_SIGNALS[p.flow] ? LOOP_SIGNALS[p.flow].dock : { kind: 'probe', id: `${p.flow}:${p.q}` }); }, muted: !!result && !played, waiting: !!tour?.guide && !!stale, waitingStep: !!tour?.guide && stepping && stepSeen !== stepKey, shockShow, compare2: showZn && zn && tour?.compare ? { result: zn, color: '#7cc96a', label: 'Ziegler–Nichols PID (light green dotted)' } : null, stepAt: stepping ? stepInput : undefined, stepLabel: stepping ? (stepInput === 'd_interest' ? '+1 percentage point' : tourReject && SHOCK_STEP[stepInput] ? SHOCK_STEP[stepInput][1].split(' (')[0] : '+1') : undefined, charts, bodeFrom, setBodeFrom, ctx, removeChart: id => setCharts(old => old.filter(c => c.id !== id)), cbs, lag, cpb, openSensor: () => { setDock(true); setSelection({ kind: 'sensor', id: '' }); },
+    addChart: (c, at) => { setCharts(old => old.some(x => x.id === c.id) ? old : [...old, c]); if (at) setPinPos(old => ({ ...old, [c.id]: at })); },
+    addBode: (from, to, at) => { const id = `bode-${probeKey(from)}-${probeKey(to)}`; setCharts(old => old.some(c => c.id === id) ? old : [...old, { id, kind: 'bode', from, to }]); setPinPos(old => ({ ...old, [id]: at })); setBodeFrom(null); }, pos: pinPos, setPos: (id, q) => setPinPos(old => ({ ...old, [id]: q })), place: (p, at) => { setPins(old => old.some(same(p)) ? old : [...old, p]); setPinPos(old => ({ ...old, [`pin-${p.flow}:${p.q}`]: at })); }, sense: toggleIn(setSensed) }), [pins, sensed, pinPos, tuning, stepInput, charts, bodeFrom, ctx, cbs, lag, cpb, !!tour, ghost, selection.kind, tour?.compare, pinned, tourReject, stepping, result, played, zn, showZn, shockShow, stale, stepSeen, stepKey]);
   const actions: ProbeActions = { addSens: () => setCharts(old => old.some(c => c.kind === 'sens') ? old.filter(c => c.kind !== 'sens') : [...old, { id: 'sens', kind: 'sens' }]), hasSens: charts.some(c => c.kind === 'sens'), pinned: p => pins.some(same(p)), sensed: p => sensed.some(same(p)), pin: toggleIn(setPins), sense: toggleIn(setSensed), list: sensed, count: pins.length, stepInput, setStepInput };
   const canvasRef = useRef<HTMLDivElement>(null);
   const labelOf = (t: Selection) => !map ? t.id : t.kind === 'flow' ? map.flows.find(f => f.id === t.id)?.label ?? t.id : t.kind === 'signal' ? [...map.disturbances, ...map.outputs].find(o => o.id === t.id)?.label ?? t.id : t.id;
@@ -1076,7 +1114,9 @@ export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, s
   // Play: the year marker runs through the simulation (about 7 s), so the plots and values unfold in time.
   const [playing, setPlaying] = useState(false);
   // A new run shows the whole period at once (lines dark to the end); Play runs it through time on request.
-  useEffect(() => { if (result) { setPlaying(false); setIndex(result.year.length - 1); } }, [result]);
+  // Play with changed inputs (guided tour): run first, then play the new run from the start
+  const playNext = useRef(false);
+  useEffect(() => { if (!result) return; if (playNext.current) { playNext.current = false; setPlayed(true); setPlays(n => n + 1); setIndex(0); setPlaying(true); } else { setPlaying(false); setIndex(result.year.length - 1); } }, [result]);
   // Plots stay grey until Play is pressed once; a new tour step starts grey again (re-runs after a gain change do not).
   useEffect(() => { setPlayed(false); }, [tour?.n]);
   useEffect(() => {
@@ -1084,10 +1124,10 @@ export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, s
     const n = result.year.length, t = window.setInterval(() => setIndex(i => { const next = Math.min((i ?? 0) + 2, n - 1); if (next >= n - 1) setPlaying(false); return next; }), 50);
     return () => clearInterval(t);
   }, [playing, result]);
-  const togglePlay = () => { if (!result) return; setPlayed(true); if (!playing) setPlays(n => n + 1); if (!playing && at >= result.year.length - 1) setIndex(0); setPlaying(p => !p); };
+  const togglePlay = () => { if (stepping && !playing) setStepSeen(stepKey); if (tour?.guide && stale && !playing) { if (!busy) { playNext.current = true; run(); } return; } if (!result) return; setPlayed(true); if (!playing) setPlays(n => n + 1); if (!playing && at >= result.year.length - 1) setIndex(0); setPlaying(p => !p); };
   // The guided tour follows the visitor's clicks through this snapshot.
-  useEffect(() => { onSnap?.({ n: tour?.n ?? 0, agents: view.agents, system: view.system, cpb: view.cpb, controller: view.controller, formulas: !!view.formulas, hl: hl?.id ?? null, pins: pins.map(probeKey), charts: charts.map(c => c.kind), plays, stepping, sel: `${selection.kind}:${selection.id}`, stepInput, showZn }); },
-    [view, hl, pins, charts, plays, stepping, selection, stepInput, showZn, tour?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { onSnap?.({ n: tour?.n ?? 0, playing, finance: view.finance, agents: view.agents, system: view.system, cpb: view.cpb, controller: view.controller, formulas: !!view.formulas, hl: hl?.id ?? null, pins: pins.map(probeKey), charts: charts.map(c => c.kind), plays, stepping, sel: `${selection.kind}:${selection.id}`, stepInput, showZn }); },
+    [view, hl, pins, charts, plays, playing, stepping, selection, stepInput, showZn, tour?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   const setView = (next: View) => {
     // resizing the controller only: keep the zoom (no refit), so the block grows under the mouse
     if (next.ctrlScale !== view.ctrlScale && JSON.stringify({ ...next, ctrlScale: 0 }) === JSON.stringify({ ...view, ctrlScale: 0 })) { setViewState(next); return; }
@@ -1117,7 +1157,7 @@ export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, s
     <div className="map-body" ref={bodyRef} style={{ gridTemplateColumns: `${left ? (leftOpen ? '290px ' : '34px ') : ''}minmax(0,1fr) ${!dock ? '34px' : selection.kind === 'ident' || selection.kind === 'robust' ? '520px' : selection.kind === 'agent' && selection.id === 'controller' ? '460px' : '340px'}` }}>
       {left && (leftOpen ? <aside className="inspector left-dock"><button className="dock-toggle" aria-label="Collapse scenario panel" title="Collapse" onClick={() => setLeftOpen(false)}><Minus size={14}/></button>{left}</aside>
         : <button className="dock-handle" data-no-shot aria-label="Open scenario panel" title="Open scenario panel" onClick={() => setLeftOpen(true)}><ChevronRight size={16}/><span>Scenario</span></button>)}
-      <div className="map-canvas" ref={canvasRef} style={{ ['--lab' as string]: lab, ['--eq' as string]: lab / 1.3 }} onClick={() => setMenuAt(null)}><ReactFlowProvider><Canvas hl={hl} setHl={setHl} map={map} view={view} setView={setView} scenario={scenario} result={result} at={at} selection={selection} select={setSelection} focus={focus} menu={openMenu} flip={() => setFeedback(!scenario.feedback)} probes={probeState} step={stepGain} steps={stepping ? steps : null} lab={lab} chips={{ update, stepping, stepInput, setStepInput, showCtrl: view.controller || tuning || !!forceChips?.ctrl, showMarket: view.system || (selection.kind === 'agent' && selection.id === 'system') || !!forceChips?.market }}/></ReactFlowProvider>
+      <div className={'map-canvas' + (playing ? ' playing' : '')} ref={canvasRef} style={{ ['--lab' as string]: lab, ['--eq' as string]: lab / 1.3 }} onClick={() => setMenuAt(null)}><ReactFlowProvider><Canvas hl={hl} setHl={setHl} map={map} view={view} setView={setView} scenario={scenario} result={result} at={at} selection={selection} select={setSelection} focus={focus} menu={openMenu} flip={() => setFeedback(!scenario.feedback)} probes={probeState} step={stepGain} steps={stepping ? steps : null} lab={lab} chips={{ update, stepping, stepInput, setStepInput: pickStep, showCtrl: view.controller || tuning || !!forceChips?.ctrl, showMarket: view.system || (selection.kind === 'agent' && selection.id === 'system') || !!forceChips?.market }}/></ReactFlowProvider>
         {menuAt && <div className="ctx-menu" role="menu" style={{ left: menuAt.x, top: menuAt.y }} onClick={e => e.stopPropagation()}>
           {menuAt.target.kind === 'agent' && (menuAt.target.id === 'parliament' || menuAt.target.id === 'sum') ? <>
             <p>{menuAt.target.id === 'parliament' ? 'Parliament' : 'Summing junction'}</p>
@@ -1134,7 +1174,7 @@ export function ModelMap({ scenario, result, pinned, zn, shockShow, busy, run, s
         {view.noParliament && <button className="ghost small show-parl" data-no-shot onClick={() => setView({ ...view, noParliament: false })}>Show Parliament</button>}
         <div className="map-key"><span className="k money">Money port pair</span><span className="k real">Goods port pair</span><span className="k shock">d: shock</span><span className="k policy">u: subsidy</span><span className="muted">f: flow, e: incentive. Click + or a block to open it in place. Right-click two flows for a transfer function.</span></div>
       </div>
-      {dock ? <aside className="inspector" aria-live="polite"><button className="dock-toggle" aria-label="Collapse panel" title="Collapse panel" onClick={() => setDock(false)}><Minus size={14}/></button><Inspector map={map} selection={selection} pick={setSelection} result={result} pinned={pinned} scenario={scenario} enter={enter} layer="" tf={tf} setTf={setTf} update={update} probes={actions} design={design} setDesign={setDesign} onPreview={setPreviewScale} auto={!!tour} reject={tourReject}/></aside>
+      {dock ? <aside className="inspector" aria-live="polite"><button className="dock-toggle" aria-label="Collapse panel" title="Collapse panel" onClick={() => setDock(false)}><Minus size={14}/></button><Inspector map={map} selection={selection} pick={setSelection} result={result} pinned={pinned} scenario={scenario} enter={enter} layer="" tf={tf} setTf={setTf} update={update} probes={actions} design={design} setDesign={setDesign} onPreview={setPreviewScale} auto={!!tour} reject={tourReject} robustOnly={!!tour?.robustOnly}/></aside>
         : <button className="dock-handle" data-no-shot aria-label="Open panel" title="Open panel" onClick={() => setDock(true)}><ChevronLeft size={16}/><span>Panel</span></button>}
     </div>
   </section>;

@@ -445,3 +445,18 @@ button,input { font:inherit; } button { cursor:pointer; } button:disabled { opac
 .map-head .label-size input { width:70px; }
 .map-canvas { height:var(--canvas-h, calc(100vh - 170px)); min-height:420px; max-height:none; }
 .inspector { max-height:var(--canvas-h, calc(100vh - 150px)); }
+.coach-head { cursor:grab; user-select:none; touch-action:none; } .coach-head:active { cursor:grabbing; }
+/* The dots on the lines stand still and run only while Play runs (Jesse, 11 Nov 2026) */
+.map-canvas .flow-dots { animation-play-state:paused; } .map-canvas.playing .flow-dots { animation-play-state:running; }
+.chip-wrap { display:inline-flex; align-items:center; gap:6px; }
+.chip-menu.up { top:auto; bottom:calc(100% + 6px); }
+.chip.chip-slider { padding:3px 10px; gap:6px; cursor:default; } .chip.chip-slider input { width:110px; flex:none; }
+.chip-opt { padding:5px 10px; }
+.pin-card .waiting { display:flex; align-items:center; justify-content:center; flex:1; min-height:60%; font-size:calc(14px * var(--s, 1)); text-align:center; }
+/* play button and year slider always on their own line, left (a toolbar button appearing does not move them) */
+.map-head .year-slider { flex-basis:100%; order:10; }
+/* icons on the closed main blocks (Parliament, Tax Authority, Housing Market, CBS) */
+.block-body { position:relative; }
+.block-icon { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; color:rgba(255,255,255,.9); }
+.block-icon svg { width:46%; height:46%; max-width:64px; max-height:64px; stroke-width:1.6; filter:drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
+.map-node.controller .block-icon { color:rgba(20,70,90,.7); filter:none; }
