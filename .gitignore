@@ -9,3 +9,4 @@ __pycache__/
 .DS_Store
 vm_check/
 .venv/
+monetary_frontend/dist/
