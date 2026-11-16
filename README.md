@@ -85,8 +85,13 @@ After front-end edits: `cd monetary_frontend && npm run build`. After Python edi
 - `scenario.py`: scenario inputs (open-loop rate path, rule gains Kp/Ki/Kd, derivative filter, R*, target, start time), output series and metrics. 120 model time units = 1 year (from the /120 in the interest flows).
 - `frequency.py`: plant rate -> inflation from ngspice's AC analysis, linearised at the steady state or a chosen year; loop, margins, Ms, Nyquist, S/T, plant poles by vector fitting, closed-loop poles and linear step response.
 - `schematic.py`: parses the `.asc`, rebuilds the nets from the drawing, checks them against the netlist (53 nodes) and gives each element its sector and the links between sectors.
-- `server.py`: FastAPI (`/api/catalogue`, `/api/runs`, `/api/analysis`, `/api/model/map`, `/api/trace`), serves `monetary_frontend/dist`.
-- `monetary_frontend/`: React + Plotly with three tabs: Simulation, Frequency analysis, Model map.
+- `flows.py`: flows between sectors. At every node shared by two or more sectors, the current each sector's elements push in (I(x) enters the element's second node) is summed per sector; these sums add up to zero (Kirchhoff, tested). Goods, labour and money nodes are mixed, so the page shows them per node.
+- `frequency.sweep`: robustness map over Ki × Kd at the current Kp (Ms, phase margin, linear verdict per cell) from the cached plant and fit, without extra simulations. In closed loop at a later year the plant itself depends on Ki and Kd; the map then keeps the current plant (flagged `approx`).
+- `server.py`: FastAPI (`/api/catalogue`, `/api/runs`, `/api/analysis`, `/api/sweep`, `/api/flows`, `/api/model/map`, `/api/trace`), serves `monetary_frontend/dist`.
+- `monetary_frontend/`: React + Plotly with four tabs: Simulation (KPI tiles with sparkline and delta, inflation gap with ±1 pt band, rates along the chain, transmission small multiples with a "compare sizes" index mode, balance sheets, run library with compare), Frequency analysis (robustness map, Bode, Nyquist, S/T, poles, step), Sector flows (Sankey per year, node table, node over time) and Model map.
+
+### Charts
+Colours live in `monetary_frontend/src/viz.ts` and follow the quantity, not the chart: inflation blue, rates orange, real economy aqua; the four rates are one orange ramp from the policy rate outwards; reference lines (target, Φ) are ink; compared runs grey dashed; red/green only for the stability verdict, always with ✓/✕. The sets were checked with the dataviz skill's `validate_palette.js` (categorical: all pairs, light and dark; ramps: `--ordinal`); re-run it when a colour changes. Light and dark themes follow the OS or the Theme selector. Every chart has Table and CSV; time charts share a crosshair.
 
 ## Limits
 - Calendar anchor 1996.46 comes from the thesis figure scripts and needs confirmation.
