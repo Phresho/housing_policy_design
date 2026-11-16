@@ -61,6 +61,33 @@ Local development on the Mac: `./start.sh` serves the site at http://127.0.0.1:8
 
 Developed with ngspice 45.2 and PySpice 1.5 (PySpice warns that 45 is "unsupported"; it works). Ubuntu ships older ngspice versions; the translation uses only basic features, but run the tests there.
 
+## Monetary Policy Lab (branch `FrisoMonetary`)
+A second, separate app for the macro model with a central bank, banks, households, firms, government and a foreign sector (`model/Model_Bank_20261111_bank.net`, drawn in `Model_Bank_20261111_bank.asc`). It shares nothing with the housing app at run time.
+
+### Run (Windows)
+First time:
+```
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install -r backend\requirements.txt
+cd monetary_frontend && npm install && npm run build
+```
+The ngspice DLL is taken from `tools/ngspice/Spice64_dll/` (git-ignored; same 45.2 package as in "Windows" above) unless `NGSPICE_LIBRARY_PATH` is set. Then `start_monetary.cmd` opens http://127.0.0.1:8010 (`backend/run_monetary.py --port 8010`). `MONETARY_NGSPICE_TIMEOUT` (default 120 s) stops a hanging run.
+
+After front-end edits: `cd monetary_frontend && npm run build`. After Python edits: restart.
+
+### Check
+`.venv\Scripts\python -m pytest -q tests/test_monetary.py` and `cd monetary_frontend && npx tsc --noEmit`.
+
+### How it works
+- `backend/monetary/netlist.py`: run netlists from the unchanged model file; every option replaces exact, asserted lines (open loop: the rate source `B§R`; closed loop: the policy rule `B_PI`).
+- `ngspice.py`: LTspice syntax to ngspice, runs through the shared DLL in a background thread with a timeout; AC analysis and integrator states for the frequency analysis. `ltspice.py` is the reference solver.
+- `steady.py`: steady-state start. The forcing `.ic` lines are removed, the operating point settles the fast part and a root finder sets the free integrators so their inputs are zero; stocks (capital, debt, wage index) keep their start values. Without it the netlist's own start makes inflation spike in the first months.
+- `scenario.py`: scenario inputs (open-loop rate path, rule gains Kp/Ki/Kd, derivative filter, R*, target, start time), output series and metrics. 120 model time units = 1 year (from the /120 in the interest flows).
+- `frequency.py`: plant rate -> inflation from ngspice's AC analysis, linearised at the steady state or a chosen year; loop, margins, Ms, Nyquist, S/T, plant poles by vector fitting, closed-loop poles and linear step response.
+- `schematic.py`: parses the `.asc`, rebuilds the nets from the drawing, checks them against the netlist (53 nodes) and gives each element its sector and the links between sectors.
+- `server.py`: FastAPI (`/api/catalogue`, `/api/runs`, `/api/analysis`, `/api/model/map`, `/api/trace`), serves `monetary_frontend/dist`.
+- `monetary_frontend/`: React + Plotly with three tabs: Simulation, Frequency analysis, Model map.
+
 ## Limits
 - Calendar anchor 1996.46 comes from the thesis figure scripts and needs confirmation.
 - ZN and H-infinity gains come from the linear design and were not retuned on this nonlinear circuit.
