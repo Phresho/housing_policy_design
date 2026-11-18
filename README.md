@@ -62,7 +62,7 @@ Local development on the Mac: `./start.sh` serves the site at http://127.0.0.1:8
 Developed with ngspice 45.2 and PySpice 1.5 (PySpice warns that 45 is "unsupported"; it works). Ubuntu ships older ngspice versions; the translation uses only basic features, but run the tests there.
 
 ## Monetary Policy Lab (branch `FrisoMonetary`)
-A second, separate app for the macro model with a central bank, banks, households, firms, government and a foreign sector (`model/Model_Bank_20261111_bank.net`, drawn in `Model_Bank_20261111_bank.asc`). It shares nothing with the housing app at run time.
+A second, separate app for the macro model with a central bank, banks, households, firms, government and a foreign sector (`model/Model_Bank_20261111_bank_cleaned up.net`, drawn in `Model_Bank_20261111_bank_cleaned up.asc`; the cleaned-up drawing leaves room between the agents for the web map. The older `Model_Bank_20261111_bank.*` differs only in the dividends: `div_leak*I(NII)` there, `div_leak*I(B_NW)/120` here). It shares nothing with the housing app at run time.
 
 ### Run (Windows)
 First time:
